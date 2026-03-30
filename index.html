@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<base href="https://ykhymj1.github.io/account/"/>
+<base href="https://ykhymj1.github.io/Total-stock/"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -482,15 +482,13 @@ function getCmaItems(c){
   return (c&&c.items&&c.items.length)?c.items:[{idx:0,name:c.label,principal:c.principal,current:c.current,yearInterest:c.pnl,totalInterest:c.totalInterest,dailyInterest:c.dailyInterest,rate:c.rate,days:c.days,memo:''}];
 }
 function getCmaYearInterest(c){
-  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0)*sh;
+    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);
   },0);
 }
 function getCmaDailyInterest(c){
-  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.dailyInterest)||0)*sh;
+    return sum+((item&&item.dailyInterest)||0);
   },0);
 }
 function renderCmaCard(c){
@@ -661,13 +659,9 @@ window.addEventListener('message',function(e){
     return;
   }
   if(d.type==='IFRAME_READY'){
-    // ★★ [버그수정] iframe React 마운트 완료 → UID 전달 + pending 메시지도 처리
+    // iframe React 마운트 완료 신호 → UID 즉시 전달
     if(_fbUser&&sf&&sf.contentWindow){
       try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
-    }
-    if(_pendingStockMessage&&sf&&sf.contentWindow){
-      var pm=_pendingStockMessage;_pendingStockMessage=null;
-      setTimeout(function(){try{sf.contentWindow.postMessage(pm,'*');}catch(e){}},50);
     }
     return;
   }
@@ -778,16 +772,14 @@ var _stockFrameLoaded=false;
 function onStockFrameLoad(){
   _stockFrameLoaded=true;
   var sf=document.getElementById('stockFrame');
-  if(!sf||!sf.contentWindow)return;
-  // ★ FB_UID는 IFRAME_READY 수신 시 전달되므로 여기서도 시도 (중복 무방)
-  if(_fbUser){
-    try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
-  }
-  // ★ pending 메시지는 IFRAME_READY 이후에 처리되도록 딜레이
-  // (React 마운트 전에 발송하면 메시지 손실 → 빈 화면)
-  if(_pendingStockMessage){
-    var pm=_pendingStockMessage;_pendingStockMessage=null;
-    setTimeout(function(){try{sf.contentWindow.postMessage(pm,'*');}catch(e){}},500);
+  if(sf&&sf.contentWindow){
+    if(_fbUser){
+      try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+    }
+    if(_pendingStockMessage){
+      try{sf.contentWindow.postMessage(_pendingStockMessage,'*');}catch(e){}
+      _pendingStockMessage=null;
+    }
   }
 }
 function lockApp(){
