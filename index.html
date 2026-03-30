@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<base href="https://ykhymj1.github.io/Total-stock/"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#ffffff"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"/>
+<meta name="apple-mobile-web-app-title" content="YKH자산"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<title>YKH자산</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{width:100%;height:100%;background:#f0f4f8;font-family:'Noto Sans KR',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden;color:#111827;}
+button{touch-action:manipulation;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+input{-webkit-appearance:none;appearance:none;font-size:16px!important;font-family:'Noto Sans KR',sans-serif;}
+input:focus{outline:none;}
+::-webkit-scrollbar{display:none;}
+*{scrollbar-width:none;}
+#loginScreen,#lockScreen,#homeScreen,#appLayer{position:fixed;inset:0;max-width:480px;margin:0 auto;display:none;}
+#loginScreen{display:none;flex-direction:column;align-items:center;justify-content:center;background:#f0f4f8;padding:32px 24px;z-index:200;overflow-y:auto;}
+#loginScreen.show{display:flex;}
+.login-input{width:100%;padding:16px 18px;background:#fff;border:1.5px solid #d1d9e6;border-radius:14px;color:#111827;font-size:16px!important;outline:none;box-sizing:border-box;transition:border-color .2s;font-family:'Noto Sans KR',sans-serif;font-weight:600;}
+.login-input:focus{border-color:#2563eb;}
+.login-input::placeholder{color:#9ca3af;font-weight:400;}
+.login-btn-primary{width:100%;padding:16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:opacity .15s;}
+.login-btn-primary:active{opacity:.85;}
+.login-btn-primary:disabled{background:#d1d9e6;color:#9ca3af;cursor:not-allowed;}
+.login-btn-secondary{width:100%;padding:14px;background:#fff;border:1.5px solid #d1d9e6;border-radius:14px;color:#374151;font-size:14px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
+.login-btn-secondary:active{border-color:#2563eb;color:#2563eb;}
+#lockScreen{display:none;flex-direction:column;align-items:center;justify-content:center;background:#f0f4f8;padding:32px 24px;z-index:100;overflow-y:auto;}
+#lockScreen.show{display:flex;}
+.pin-dots{display:flex;gap:18px;margin-bottom:34px;}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid #d1d9e6;transition:all .14s;}
+.pin-dot.filled{background:#2563eb;border-color:#2563eb;box-shadow:0 0 10px rgba(37,99,235,.4);}
+.pin-dot.err{background:#dc2626;border-color:#dc2626;animation:shake .3s;}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+.keypad{display:grid;grid-template-columns:repeat(3,72px);gap:13px;margin-bottom:20px;}
+.key{width:72px;height:72px;border-radius:50%;background:#fff;border:1.5px solid #d1d9e6;color:#111827;font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;font-family:'DM Mono',monospace;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.key:active{background:#e8eef7;transform:scale(.91);}
+.key.kdel{font-size:19px;color:#6b7280;}
+.key.kbio{font-size:26px;}
+.key.kempty{background:transparent;border:none;pointer-events:none;box-shadow:none;}
+.lk-err{font-size:13px;color:#dc2626;min-height:18px;text-align:center;font-weight:700;}
+.lk-hint{font-size:11px;color:#6b7280;text-align:center;padding:0 30px;line-height:1.7;margin-top:6px;}
+.bio-reg-btn{margin-top:14px;padding:11px 22px;border-radius:10px;background:#eff6ff;border:1px solid #2563eb;color:#2563eb;font-size:13px;font-family:'Noto Sans KR',sans-serif;font-weight:700;cursor:pointer;}
+.bio-status{font-size:11px;margin-top:8px;text-align:center;min-height:16px;font-family:'DM Mono',monospace;}
+.bio-status.ok{color:#059669;}.bio-status.err{color:#dc2626;}
+#pinSetup{position:fixed;inset:0;max-width:480px;margin:0 auto;z-index:101;background:#f0f4f8;display:none;flex-direction:column;align-items:center;justify-content:center;}
+#pinSetup.show{display:flex;}
+#homeScreen{display:none;z-index:50;overflow-y:auto;background:#f0f4f8;}
+#homeScreen.show{display:block;}
+#appLayer{display:none;z-index:60;}
+#appLayer.show{display:block;}
+/* ★ stockFrame: display:none 대신 visibility:hidden으로 항상 DOM에 살아있게 유지 → iframe React 즉시 마운트 & postMessage 발송 가능 */
+#stockFrame{position:fixed;inset:0;width:100%;height:100%;border:none;background:#f0f4f8;visibility:hidden;opacity:0;pointer-events:none;z-index:-1;max-width:480px;margin:0 auto;}
+#stockFrame.show{visibility:visible;opacity:1;pointer-events:auto;z-index:65;}
+#syncToast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9000;background:#111827;border:1px solid #374151;border-radius:12px;padding:12px 20px;font-size:13px;color:#f9fafb;font-family:'Noto Sans KR',sans-serif;font-weight:700;white-space:nowrap;opacity:0;transition:all .28s;pointer-events:none;}
+#syncToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<!-- 로그인 화면 -->
+<div id="loginScreen">
+  <div style="text-align:center;margin-bottom:36px;">
+    <img src="icon-192.png" style="width:72px;height:72px;border-radius:20px;margin-bottom:14px;box-shadow:0 4px 16px rgba(37,99,235,.2);" alt="" onerror="this.style.display='none'"/>
+    <div style="font-size:10px;color:#2563eb;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px;font-family:'DM Mono',monospace;font-weight:600;">YKH ASSET MANAGER</div>
+    <div style="font-size:24px;font-weight:800;color:#111827;margin-bottom:8px;">YKH자산</div>
+    <div style="font-size:13px;color:#6b7280;line-height:1.7;font-weight:500;">로그인하면 기기를 바꿔도<br/>데이터가 자동으로 동기화돼요</div>
+  </div>
+  <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px;">
+    <input id="loginEmail" class="login-input" type="email" placeholder="이메일 주소" autocomplete="email" oninput="clearLoginErr()"/>
+    <input id="loginPw" class="login-input" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password" oninput="clearLoginErr()" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}"/>
+    <div id="loginErr" style="font-size:12px;color:#dc2626;text-align:center;min-height:18px;font-weight:700;"></div>
+    <button id="loginBtn" class="login-btn-primary" onclick="doLogin()">로그인</button>
+    <button id="registerBtn" class="login-btn-secondary" onclick="doRegister()">처음이에요 — 계정 만들기</button>
+    <div style="display:flex;align-items:center;gap:12px;margin:4px 0;">
+      <div style="flex:1;height:1px;background:#e5e7eb;"></div>
+      <div style="font-size:11px;color:#9ca3af;">또는</div>
+      <div style="flex:1;height:1px;background:#e5e7eb;"></div>
+    </div>
+    <button onclick="skipLogin()" style="background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;text-decoration:underline;padding:8px;font-family:'Noto Sans KR',sans-serif;font-weight:500;">나중에 하기 (동기화 없이 사용)</button>
+  </div>
+</div>
+
+<!-- PIN 설정 -->
+<div id="pinSetup">
+  <div style="font-size:48px;margin-bottom:14px;">🔐</div>
+  <div style="font-size:22px;font-weight:800;color:#111827;margin-bottom:4px;">PIN 설정</div>
+  <div style="font-size:13px;color:#6b7280;margin-bottom:44px;" id="setupSub">사용할 4자리 PIN을 입력하세요</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="s0"></div><div class="pin-dot" id="s1"></div>
+    <div class="pin-dot" id="s2"></div><div class="pin-dot" id="s3"></div>
+  </div>
+  <div class="keypad">
+    <div class="key" onclick="sk('1')">1</div><div class="key" onclick="sk('2')">2</div><div class="key" onclick="sk('3')">3</div>
+    <div class="key" onclick="sk('4')">4</div><div class="key" onclick="sk('5')">5</div><div class="key" onclick="sk('6')">6</div>
+    <div class="key" onclick="sk('7')">7</div><div class="key" onclick="sk('8')">8</div><div class="key" onclick="sk('9')">9</div>
+    <div class="key kempty"></div>
+    <div class="key" onclick="sk('0')">0</div>
+    <div class="key kdel" onclick="sdel()">⌫</div>
+  </div>
+  <div class="lk-err" id="setupErr"></div>
+</div>
+
+<!-- 잠금화면 -->
+<div id="lockScreen">
+  <div style="text-align:center;margin-bottom:40px;">
+    <img src="icon-192.png" style="width:64px;height:64px;border-radius:18px;margin-bottom:14px;box-shadow:0 4px 16px rgba(37,99,235,.15);" alt="" onerror="this.style.display='none'"/>
+    <div style="font-size:10px;color:#2563eb;letter-spacing:4px;text-transform:uppercase;margin-bottom:6px;font-weight:700;">YKH ASSET MANAGER</div>
+    <div style="font-size:22px;font-weight:800;color:#111827;">YKH자산</div>
+    <div id="lkSub" style="font-size:12px;color:#6b7280;margin-top:6px;">PIN을 입력하세요</div>
+  </div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="d0"></div><div class="pin-dot" id="d1"></div>
+    <div class="pin-dot" id="d2"></div><div class="pin-dot" id="d3"></div>
+  </div>
+  <div class="keypad">
+    <div class="key" onclick="pk('1')">1</div><div class="key" onclick="pk('2')">2</div><div class="key" onclick="pk('3')">3</div>
+    <div class="key" onclick="pk('4')">4</div><div class="key" onclick="pk('5')">5</div><div class="key" onclick="pk('6')">6</div>
+    <div class="key" onclick="pk('7')">7</div><div class="key" onclick="pk('8')">8</div><div class="key" onclick="pk('9')">9</div>
+    <div class="key kbio" onclick="tryBio()">🫆</div>
+    <div class="key" onclick="pk('0')">0</div>
+    <div class="key kdel" onclick="pdel()">⌫</div>
+  </div>
+  <div class="lk-err" id="lkErr"></div>
+  <button class="bio-reg-btn" id="bioRegBtn" onclick="enrollBio()" style="display:none">🫆 지문 등록하기</button>
+  <div class="bio-status" id="bioStatus"></div>
+  <div class="lk-hint" id="lkHint"></div>
+</div>
+
+<!-- 홈 -->
+<div id="homeScreen">
+  <div style="padding:52px 20px 28px;background:linear-gradient(160deg,#1e3a8a 0%,#1d4ed8 55%,#2563eb 100%);">
+    <div style="font-size:10px;color:rgba(255,255,255,.7);letter-spacing:3px;text-transform:uppercase;margin-bottom:6px;font-family:'DM Mono',monospace;font-weight:600;">YKH ASSET MANAGER</div>
+    <div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:4px;letter-spacing:-.5px;">YKH자산</div>
+    <div style="font-size:13px;color:rgba(255,255,255,.65);font-weight:500;" id="homeDateTxt"></div>
+  </div>
+
+  <!-- 총 평가금액 -->
+  <div style="margin:0 16px;margin-top:-20px;background:#fff;border-radius:20px;padding:20px 22px;position:relative;overflow:hidden;box-shadow:0 4px 24px rgba(37,99,235,.14);">
+    <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#2563eb,#06b6d4);"></div>
+    <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px;font-weight:700;">전체(AMT+MY) 자산총액 (CMA 포함)</div>
+    <div style="font-size:34px;font-weight:800;color:#111827;letter-spacing:-.5px;margin-bottom:4px;" id="totalAmt">-</div>
+    <div id="myTotalAmt" style="font-size:13px;color:#111827;font-weight:800;">실질 내 총액 -</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e8eef7;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="font-size:11px;color:#6b7280;font-weight:700;">총 증권계좌 (AMT+MY)</div>
+        <div id="sixAcctGrossAmt" style="font-size:15px;font-weight:800;color:#111827;">-</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="font-size:11px;color:#6b7280;font-weight:700;">MY 총 증권계좌</div>
+        <div id="myRealAmt" style="font-size:15px;font-weight:800;color:#059669;">-</div>
+      </div>
+      <div style="font-size:10px;color:#9ca3af;font-weight:700;">※ AMT / AMT CMA 공동계좌는 내 지분 1/2 기준으로 별도 표시</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e8eef7;">
+      <div>
+        <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">전날 수익</div>
+        <div id="dayPnl" style="font-size:14px;font-weight:800;color:#9ca3af;">-</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">총 수익</div>
+        <div id="totalPnl" style="font-size:14px;font-weight:800;color:#9ca3af;">-</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 카드들 -->
+  <div style="padding:12px 16px 0;display:flex;flex-direction:column;gap:10px;">
+
+    <!-- 주식 카드 -->
+    <div onclick="enterApp('stock')" style="background:#fff;border-radius:16px;padding:18px 20px;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06);-webkit-tap-highlight-color:transparent;border:1.5px solid #e8eef7;">
+      <div style="position:absolute;top:0;left:0;bottom:0;width:4px;background:linear-gradient(180deg,#3b82f6,#2563eb);border-radius:4px 0 0 4px;"></div>
+      <div style="padding-left:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div>
+            <div style="font-size:11px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">전체(AMT+MY) 증권계좌</div>
+            <div style="font-size:26px;font-weight:800;color:#111827;letter-spacing:-.5px;" id="stockTotal">-</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+              <div style="font-size:11px;color:#6b7280;font-weight:700;">MY 증권계좌</div>
+              <div style="font-size:14px;font-weight:800;color:#059669;" id="myStockAmt">-</div>
+            </div>
+          </div>
+          <div style="font-size:32px;opacity:.8;margin-left:12px;">📊</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;min-height:20px;" id="stockAcctBadges"></div>
+        <!-- 주식 전날/총 수익 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;" id="stockPnlRows">
+          <div>
+            <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">전날 수익</div>
+            <div id="stockDayPnl" style="font-size:12px;font-weight:800;color:#9ca3af;">-</div>
+          </div>
+          <div>
+            <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">총 수익</div>
+            <div id="stockTotalPnl" style="font-size:12px;font-weight:800;color:#9ca3af;">-</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:3px;">
+          <span style="font-size:12px;color:#2563eb;font-weight:800;">포트폴리오 보기</span>
+          <span style="font-size:16px;color:#2563eb;">&#8250;</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CMA 카드 -->
+    <div onclick="openCmaModal()" style="background:#fff;border-radius:16px;padding:18px 20px;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06);-webkit-tap-highlight-color:transparent;border:1.5px solid #e8eef7;">
+      <div style="position:absolute;top:0;left:0;bottom:0;width:4px;background:linear-gradient(180deg,#06b6d4,#0891b2);border-radius:4px 0 0 4px;"></div>
+      <div style="padding-left:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="flex:1;">
+            <div style="font-size:11px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">CMA 계좌 (AMT + MY CMA)</div>
+            <div style="font-size:26px;font-weight:800;color:#111827;letter-spacing:-.5px;" id="cmaAmt">-</div>
+            <div style="font-size:12px;font-weight:700;margin-top:3px;color:#059669;" id="cmaMyAmt"></div>
+            <div style="font-size:12px;font-weight:700;margin-top:3px;color:#dc2626;" id="cmaPnl"></div>
+            <div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:4px;" id="cmaDayInterest"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <div style="font-size:28px;opacity:.8;">💰</div>
+            <span style="font-size:12px;color:#0891b2;font-weight:700;">계좌 보기 &#8250;</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 환율 카드 -->
+    <div style="background:#fff;border-radius:16px;padding:16px 20px;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.06);border:1.5px solid #e8eef7;">
+      <div style="position:absolute;top:0;left:0;bottom:0;width:4px;background:linear-gradient(180deg,#f59e0b,#d97706);border-radius:4px 0 0 4px;"></div>
+      <div style="padding-left:8px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:11px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">실시간 환율 USD/KRW</div>
+          <div style="font-size:22px;font-weight:800;color:#111827;letter-spacing:-.3px;" id="fxRate">조회 중...</div>
+          <div style="font-size:11px;font-weight:600;margin-top:2px;color:#6b7280;" id="fxStatus">-</div>
+        </div>
+        <div style="font-size:32px;opacity:.8;margin-left:12px;">💱</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 하단 버튼 -->
+  <div style="padding:20px 16px;display:flex;align-items:center;justify-content:space-between;">
+    <button onclick="lockApp()" style="background:#fff;border:1.5px solid #e5e7eb;border-radius:12px;color:#374151;font-size:13px;padding:11px 24px;cursor:pointer;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.06);">잠금</button>
+    <button id="syncStatusBtn" onclick="showSyncMenu()" style="background:#fff;border:1.5px solid #e5e7eb;border-radius:12px;color:#374151;font-size:13px;padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.06);">
+      <span id="syncIcon">☁️</span>
+      <span id="syncLabel" style="font-size:11px;font-family:'DM Mono',monospace;font-weight:700;">동기화</span>
+    </button>
+  </div>
+</div>
+
+<!-- iframe: appLayer 밖에 독립 배치 → 항상 렌더링되어 React 즉시 마운트 -->
+<div id="appLayer"></div>
+<iframe id="stockFrame" src="./stock.html" allow="camera; microphone" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" onload="onStockFrameLoad()"></iframe>
+
+<div id="syncToast"></div>
+<div id="syncMenuOverlay" style="display:none;position:fixed;inset:0;z-index:500;" onclick="closeSyncMenu()"></div>
+<div id="syncMenu" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:501;background:#fff;border:1.5px solid #e5e7eb;border-radius:18px;padding:20px;width:calc(100% - 32px);max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.12);font-family:'Noto Sans KR',sans-serif;"></div>
+
+<!-- CMA 모달 -->
+<div id="cmaModalOverlay" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.64);"></div>
+<div id="cmaModal" style="display:none;position:fixed;inset:0;left:50%;transform:translateX(-50%);z-index:601;background:#ffffff;width:100%;max-width:480px;font-family:'Noto Sans KR',sans-serif;color:#111827;overflow:hidden;">
+  <div id="cmaModalScroll" style="height:100%;overflow-y:auto;padding:22px 16px 42px;">
+    <button onclick="closeCmaModal()" style="background:#f0f4f8;border:1px solid #d1d9e6;border-radius:12px;color:#374151;font-size:15px;font-weight:700;padding:10px 18px;margin-bottom:14px;">← 홈으로</button>
+    <div style="font-size:10px;color:#2563eb;letter-spacing:4px;text-transform:uppercase;margin-bottom:6px;font-weight:700;">MY PORTFOLIO</div>
+    <div style="font-size:28px;font-weight:800;color:#111827;margin-bottom:4px;">CMA 계좌 상세</div>
+    <div style="font-size:12px;color:#6b7280;font-weight:600;line-height:1.7;margin-bottom:16px;">아래로 당기면 홈으로 돌아갑니다 · 수정 버튼으로 원금/연이율을 수정할 수 있어요</div>
+    <div id="cmaModalSummary" style="background:#f8f9fa;border:1px solid #d1d9e6;border-radius:18px;padding:16px;margin-bottom:14px;"></div>
+    <div id="cmaModalBody" style="display:flex;flex-direction:column;gap:12px;"></div>
+    <div id="cmaModalAddButtons" style="display:flex;flex-direction:column;gap:10px;margin-top:14px;"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ════ 유틸 (단 1회 선언) ════ */
+function fmtWon(n) {
+  var v = parseFloat(n);
+  if (!isFinite(v) || isNaN(v)) return '₩0';
+  var abs = Math.abs(Math.round(v));
+  return (v < 0 ? '-' : '') + '₩' + abs.toLocaleString('ko-KR');
+}
+function fmtPct(n) {
+  var v=parseFloat(n)||0;
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+}
+
+/* ════ Firebase ════ */
+var FB_CONFIG = {
+  apiKey:'AIzaSyD9A3cbUujY4agOwB0OL45ccsfRhBXETMw',
+  authDomain:'mymonth-6cd61.firebaseapp.com',
+  projectId:'mymonth-6cd61',
+  storageBucket:'mymonth-6cd61.firebasestorage.app',
+  messagingSenderId:'1067760522796',
+  appId:'1:1067760522796:web:f97a12c210482e6e8de389'
+};
+var _fbAuth=null,_fbDb=null,_fbUser=null,_fbReady=false;
+
+async function initFirebase(){
+  try{
+    var [m1,m2,m3]=await Promise.all([
+      import('https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js'),
+      import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js')
+    ]);
+    var app=m1.initializeApp(FB_CONFIG);
+    _fbAuth=m2.getAuth(app);
+    _fbDb=m3.getFirestore(app);
+    _fbReady=true;
+    window._fb={
+      signIn:m2.signInWithEmailAndPassword,
+      register:m2.createUserWithEmailAndPassword,
+      signOut:m2.signOut,
+      doc:m3.doc,setDoc:m3.setDoc,getDoc:m3.getDoc
+    };
+    window._fbAuth=_fbAuth;
+    m2.onAuthStateChanged(_fbAuth,function(u){
+      _fbUser=u;
+      if(u)updateSyncStatus(true,u.email);
+      else updateSyncStatus(false,null);
+    });
+    window._fbOnAuth=m2.onAuthStateChanged;
+    return true;
+  }catch(e){console.warn('[FB]',e);return false;}
+}
+
+/* ════ 로그인 ════ */
+function showLoginScreen(){document.getElementById('loginScreen').classList.add('show');}
+function hideLoginScreen(){document.getElementById('loginScreen').classList.remove('show');}
+window.clearLoginErr=function(){document.getElementById('loginErr').textContent='';};
+
+window.doLogin=async function(){
+  var email=(document.getElementById('loginEmail').value||'').trim();
+  var pw=document.getElementById('loginPw').value||'';
+  var errEl=document.getElementById('loginErr');
+  var btn=document.getElementById('loginBtn');
+  if(!email){errEl.textContent='이메일을 입력해주세요';return;}
+  if(!pw){errEl.textContent='비밀번호를 입력해주세요';return;}
+  btn.disabled=true;btn.textContent='로그인 중...';errEl.textContent='';
+  try{
+    await window._fb.signIn(_fbAuth,email,pw);
+    showSyncToast('로그인 완료!');hideLoginScreen();startApp();
+  }catch(e){
+    var m=e.code==='auth/user-not-found'?'등록된 이메일이 없어요.':
+      e.code==='auth/wrong-password'?'비밀번호가 틀렸어요.':
+      e.code==='auth/invalid-credential'?'이메일 또는 비밀번호가 틀렸어요.':
+      e.code==='auth/too-many-requests'?'잠시 후 다시 해주세요.':
+      '로그인 실패: '+(e.message||e.code);
+    errEl.textContent=m;btn.disabled=false;btn.textContent='로그인';
+  }
+};
+
+window.doRegister=async function(){
+  var email=(document.getElementById('loginEmail').value||'').trim();
+  var pw=document.getElementById('loginPw').value||'';
+  var errEl=document.getElementById('loginErr');
+  var btn=document.getElementById('registerBtn');
+  if(!email){errEl.textContent='이메일을 입력해주세요';return;}
+  if(!pw||pw.length<6){errEl.textContent='비밀번호는 6자 이상이어야 해요';return;}
+  btn.disabled=true;btn.textContent='만드는 중...';errEl.textContent='';
+  try{
+    await window._fb.register(_fbAuth,email,pw);
+    showSyncToast('계정 생성 완료!');hideLoginScreen();startApp();
+    setTimeout(backupToCloud,2000);
+  }catch(e){
+    var m=e.code==='auth/email-already-in-use'?'이미 사용 중인 이메일이에요.':
+      e.code==='auth/weak-password'?'비밀번호가 너무 짧아요.':
+      '계정 생성 실패: '+(e.message||e.code);
+    errEl.textContent=m;btn.disabled=false;btn.textContent='처음이에요 — 계정 만들기';
+  }
+};
+
+window.skipLogin=function(){localStorage.setItem('fb_login_skipped','1');hideLoginScreen();startApp();};
+
+/* ════ 클라우드 백업 ════ */
+var IDX_KEYS=['asset_pin','asset_bio_cred'];
+var STK_KEYS=['pf_v4','pf_history_v1','pf_acct_order','pf_item_order'];
+
+async function backupToCloud(){
+  if(!_fbUser||!_fbDb)return;
+  try{
+    var fb=window._fb,now=new Date().toISOString();
+    var id={updatedAt:now};IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
+    await fb.setDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','index'),id,{merge:true});
+    var sd={updatedAt:now};STK_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)sd[k]=v;});
+    await fb.setDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','stock'),sd,{merge:true});
+    showSyncToast('백업 완료!');
+  }catch(e){console.warn('[backup]',e);}
+}
+
+async function restoreFromCloud(){
+  if(!_fbUser||!_fbDb)return false;
+  try{
+    var fb=window._fb,ok=false;
+    var is=await fb.getDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','index'));
+    if(is.exists())IDX_KEYS.forEach(function(k){if(is.data()[k]){localStorage.setItem(k,is.data()[k]);ok=true;}});
+    var ss=await fb.getDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','stock'));
+    if(ss.exists())STK_KEYS.forEach(function(k){if(ss.data()[k]){localStorage.setItem(k,ss.data()[k]);ok=true;}});
+    return ok;
+  }catch(e){return false;}
+}
+
+/* ════ 동기화 UI ════ */
+function updateSyncStatus(on,email){
+  var ic=document.getElementById('syncIcon'),lb=document.getElementById('syncLabel');
+  if(!ic||!lb)return;
+  if(on){ic.textContent='✅';lb.textContent=email?email.split('@')[0]:'연동됨';lb.style.color='#059669';}
+  else{ic.textContent='☁️';lb.textContent='동기화';lb.style.color='#374151';}
+}
+
+window.showSyncMenu=function(){
+  var m=document.getElementById('syncMenu'),o=document.getElementById('syncMenuOverlay');
+  if(m.style.display==='block'){closeSyncMenu();return;}
+  m.innerHTML=_fbUser?
+    '<div style="font-size:13px;color:#6b7280;margin-bottom:14px;text-align:center;font-weight:600;"><span style="color:#059669;font-weight:800;">'+((_fbUser&&_fbUser.email)||'')+'</span><br><span style="font-size:11px;">로그인됨</span></div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;">'+
+    '<button onclick="backupToCloud();closeSyncMenu();" style="padding:14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">지금 백업하기</button>'+
+    '<button onclick="doCloudRestore()" style="padding:14px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:12px;color:#374151;font-size:14px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:700;">클라우드에서 복원</button>'+
+    '<button onclick="doLogout()" style="padding:12px;background:transparent;border:none;color:#9ca3af;font-size:12px;cursor:pointer;text-decoration:underline;font-family:Noto Sans KR,sans-serif;">로그아웃</button></div>':
+    '<div style="font-size:13px;color:#6b7280;margin-bottom:16px;text-align:center;">로그인 안 된 상태예요</div>'+
+    '<button onclick="closeSyncMenu();showLoginScreen();" style="width:100%;padding:16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">로그인 / 계정 만들기</button>';
+  m.style.display='block';o.style.display='block';
+};
+window.closeSyncMenu=function(){document.getElementById('syncMenu').style.display='none';document.getElementById('syncMenuOverlay').style.display='none';};
+window.doLogout=async function(){closeSyncMenu();try{await window._fb.signOut(_fbAuth);localStorage.removeItem('fb_login_skipped');showSyncToast('로그아웃됐어요');updateSyncStatus(false,null);}catch(e){}};
+window.doCloudRestore=async function(){closeSyncMenu();showSyncToast('복원 중...');var ok=await restoreFromCloud();if(ok){showSyncToast('복원 완료! 새로고침합니다...');setTimeout(function(){location.reload();},1800);}else{showSyncToast('복원할 데이터가 없어요');}};
+function showSyncToast(msg){var t=document.getElementById('syncToast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},3000);}
+
+/* ════ CMA 모달 ════ */
+var _cmaDetails=[];
+var _cmaTouchStartY=0;
+var _pendingStockMessage=null;
+var _returnToCmaModal=false;
+function postToStockFrame(msg){
+  var sf=document.getElementById('stockFrame');
+  if(sf&&sf.contentWindow&&_stockFrameLoaded){
+    try{sf.contentWindow.postMessage(msg,'*');return true;}catch(e){}
+  }
+  _pendingStockMessage=msg;
+  return false;
+}
+function openStockWithMessage(msg){
+  _returnToCmaModal=!!(msg&&/^(ADD_CMA|EDIT_CMA|OPEN_CMA_ACCOUNT)$/.test(msg.type||''));
+  closeCmaModal();
+  enterApp('stock');
+  postToStockFrame(msg);
+}
+function cmaActionButtons(){
+  return `
+    <button onclick="openStockWithMessage({type:'ADD_CMA',accountId:'mycma'})" style="min-height:52px;padding:0 16px;background:#e0f7fe;border:1px solid #67e8f9;border-radius:14px;color:#0284c7;font-size:15px;font-weight:800;">＋ MY CMA 종목 추가</button>
+    <button onclick="openStockWithMessage({type:'ADD_CMA',accountId:'amtcma'})" style="min-height:52px;padding:0 16px;background:#cffafe;border:1px solid #06b6d4;border-radius:14px;color:#0e7490;font-size:15px;font-weight:800;">＋ AMT CMA 종목 추가</button>
+  `;
+}
+function renderCmaItem(c,item){
+  return `
+    <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#111827;">${item.name||c.label}</div>
+          <div style="font-size:11px;color:#6b7280;font-weight:600;margin-top:3px;">연이율 ${item.rate||0}% · ${item.days||0}일 경과</div>
+        </div>
+      </div>
+      ${item.memo?`<div style="font-size:11px;color:#90b0cc;margin-bottom:10px;">📝 ${item.memo}</div>`:''}
+      <div style="display:flex;gap:8px;">
+        <button onclick="openStockWithMessage({type:'EDIT_CMA',accountId:'${c.id}',index:${item.idx||0}})" style="flex:1;min-height:46px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;color:#1d4ed8;font-size:14px;font-weight:800;">✏️ 수정</button>
+        <button onclick="openStockWithMessage({type:'OPEN_CMA_ACCOUNT',accountId:'${c.id}'})" style="flex:1;min-height:46px;background:#f8f9fa;border:1px solid #d1d9e6;border-radius:12px;color:#374151;font-size:14px;font-weight:800;">계좌 보기</button>
+      </div>
+    </div>
+  `;
+}
+function getCmaShare(c){
+  return c&&c.shared?0.5:1;
+}
+function getCmaItems(c){
+  return (c&&c.items&&c.items.length)?c.items:[{idx:0,name:c.label,principal:c.principal,current:c.current,yearInterest:c.pnl,totalInterest:c.totalInterest,dailyInterest:c.dailyInterest,rate:c.rate,days:c.days,memo:''}];
+}
+function getCmaYearInterest(c){
+  return getCmaItems(c).reduce(function(sum,item){
+    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);
+  },0);
+}
+function getCmaDailyInterest(c){
+  return getCmaItems(c).reduce(function(sum,item){
+    return sum+((item&&item.dailyInterest)||0);
+  },0);
+}
+function renderCmaCard(c){
+  var share=getCmaShare(c);
+  var items=getCmaItems(c);
+  var yearInterest=getCmaYearInterest(c);
+  var dailyInterest=getCmaDailyInterest(c);
+  return `
+    <div style="background:#f8f9fa;border-radius:18px;padding:16px;border:1px solid #d1d9e6;box-shadow:0 4px 16px rgba(0,0,0,.08);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;">
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:4px;">${c.icon||'💳'} ${c.label||''}</div>
+          <div style="font-size:26px;font-weight:800;color:#111827;">${fmtWon(c.current||0)}</div>
+          ${c.shared?`<div style="font-size:11px;font-weight:700;margin-top:2px;"><span style="color:#111827;">내 지분 1/2</span> <span style="color:#059669;">${fmtWon((c.current||0)*0.5)}</span></div>`:''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:12px 0;border-top:1px solid #d1d9e6;border-bottom:1px solid #d1d9e6;margin-bottom:12px;">
+        <div style="text-align:center;"><div style="font-size:10px;color:#6b7280;font-weight:700;margin-bottom:4px;">원금</div><div style="font-size:12px;font-weight:800;color:#111827;">${fmtWon(c.principal||0)}</div></div>
+        <div style="text-align:center;"><div style="font-size:10px;color:#6b7280;font-weight:700;margin-bottom:4px;">전일 이자</div><div style="font-size:12px;font-weight:800;color:#dc2626;">+${fmtWon(dailyInterest)}</div></div>
+        <div style="text-align:center;"><div style="font-size:10px;color:#111827;font-weight:700;margin-bottom:4px;">올해 누적이자 (1/1~12/31)</div><div style="font-size:12px;font-weight:800;color:#dc2626;">+${fmtWon(yearInterest)}</div></div>
+      </div>
+      ${items.map(function(item){return renderCmaItem(c,item);}).join('')}
+      <button onclick="openStockWithMessage({type:'ADD_CMA',accountId:'${c.id}'})" style="width:100%;min-height:48px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;color:#1d4ed8;font-size:14px;font-weight:800;">＋ ${c.label} 추가</button>
+    </div>
+  `;
+}
+function openCmaModal(){
+  var body=document.getElementById('cmaModalBody');
+  var summary=document.getElementById('cmaModalSummary');
+  var addButtons=document.getElementById('cmaModalAddButtons');
+  if(!body||!summary||!addButtons)return;
+  var totalCurrent=0,totalPnl=0,totalDay=0,myTotal=0;
+  (_cmaDetails||[]).forEach(function(c){
+    var sh=getCmaShare(c);
+    totalCurrent+=(c.current||0);
+    totalPnl+=getCmaYearInterest(c);
+    totalDay+=getCmaDailyInterest(c);
+    myTotal+=(c.current||0)*sh;
+  });
+  summary.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div>
+        <div style="font-size:12px;color:#374151;font-weight:700;margin-bottom:4px;">CMA 총액 (AMT CMA + MY CMA)</div>
+        <div style="font-size:30px;font-weight:800;color:#111827;">${fmtWon(totalCurrent)}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:#374151;font-weight:700;margin-bottom:4px;">올해 누적이자 (1/1~12/31)</div>
+        <div style="font-size:18px;font-weight:800;color:#dc2626;">+${fmtWon(totalPnl)}</div>
+        <div style="font-size:11px;color:#111827;font-weight:700;margin-top:4px;"><span style="color:#111827;">전일 이자</span> <span style="color:#dc2626;">+${fmtWon(totalDay)}</span></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid #d1d9e6;">
+      <div style="font-size:11px;color:#374151;font-weight:700;">AMT CMA 계좌의 1/2 + MY CMA 계좌 총액</div>
+      <div style="font-size:16px;font-weight:800;"><span style="color:#111827;">MY CMA 총액</span> <span style="color:#059669;">${fmtWon(myTotal)}</span></div>
+    </div>`;
+  if(!_cmaDetails||!_cmaDetails.length){
+    body.innerHTML='<div style="text-align:center;padding:40px 0;color:#6b7280;font-size:14px;font-weight:600;line-height:1.8;">CMA 계좌 데이터가 없습니다.<br>아래 버튼으로 AMT CMA 또는 MY CMA를 추가하세요.</div>';
+  }else{
+    body.innerHTML=_cmaDetails.map(renderCmaCard).join('');
+  }
+  addButtons.innerHTML=cmaActionButtons();
+  document.getElementById('cmaModal').style.display='block';
+  document.getElementById('cmaModalOverlay').style.display='block';
+}
+function closeCmaModal(){
+  document.getElementById('cmaModal').style.display='none';
+  document.getElementById('cmaModalOverlay').style.display='none';
+}
+(function(){
+  var sc=document.getElementById('cmaModalScroll');
+  if(!sc)return;
+  sc.addEventListener('touchstart',function(e){_cmaTouchStartY=(sc.scrollTop<=0)?e.touches[0].clientY:0;},{passive:true});
+  sc.addEventListener('touchend',function(e){
+    if(!_cmaTouchStartY)return;
+    var diff=e.changedTouches[0].clientY-_cmaTouchStartY;
+    _cmaTouchStartY=0;
+    if(diff>90&&sc.scrollTop<=0)closeCmaModal();
+  },{passive:true});
+})();
+
+/* ════ 홈화면 캐시 ════ */
+var SUMMARY_CACHE_KEY='ykh_summary_cache';
+function saveSummaryCache(d){
+  try{localStorage.setItem(SUMMARY_CACHE_KEY,JSON.stringify({data:d,ts:Date.now()}));}catch(e){}
+}
+function loadSummaryCache(){
+  try{
+    var raw=localStorage.getItem(SUMMARY_CACHE_KEY);
+    if(!raw)return null;
+    var obj=JSON.parse(raw);
+    // 24시간 이내 캐시만 사용
+    if(Date.now()-obj.ts>86400000)return null;
+    return obj.data;
+  }catch(e){return null;}
+}
+function applySummaryToHome(d){
+  if(!d)return;
+  var total=d.grossTotal||d.total||0,stockOnly=d.stockOnly||0,cmaTotal=d.cmaTotal||0;
+  var cmaPnl=d.cmaPnl||0,dayPnl=d.dayPnl||0,dayPct=d.dayPct||0;
+  var fxR=d.fxRate||0,fxA=d.fxAuto||false,fxT=d.fxTime||'';
+  var cmaDetails=(d.cmaDetails&&d.cmaDetails.length)?d.cmaDetails:[];
+  var cmaGrossTotal=cmaDetails.length?cmaDetails.reduce(function(s,c){return s+(c.current||0);},0):(d.cmaGrossTotal||cmaTotal);
+  var cmaMyTotal=cmaDetails.length?cmaDetails.reduce(function(s,c){return s+(c.current||0)*getCmaShare(c);},0):cmaTotal;
+  var cmaMyPnl=cmaDetails.length?cmaDetails.reduce(function(s,c){return s+getCmaYearInterest(c);},0):cmaPnl;
+  var cmaMyDay=cmaDetails.length?cmaDetails.reduce(function(s,c){return s+getCmaDailyInterest(c);},0):0;
+  var el;
+  el=document.getElementById('totalAmt');  if(el)el.textContent=fmtWon(total);
+  el=document.getElementById('myTotalAmt'); if(el)el.innerHTML='<span style="color:#111827;">MY 총자산 (CMA 포함)</span> <span style="color:#059669;font-weight:800;">'+fmtWon(d.personalTotal||d.total||0)+'</span>';
+  el=document.getElementById('sixAcctGrossAmt'); if(el)el.textContent=fmtWon(d.stockGrossTotal||stockOnly);
+  el=document.getElementById('myRealAmt'); if(el)el.textContent=fmtWon(d.mySixAcctTotal||stockOnly);
+  el=document.getElementById('stockTotal');if(el)el.textContent=fmtWon(d.stockGrossTotal||stockOnly);
+  el=document.getElementById('myStockAmt');if(el)el.textContent=fmtWon(d.mySixAcctTotal||stockOnly);
+  var sSDP=document.getElementById('stockDayPnl');
+  if(sSDP&&(dayPnl!==0||dayPct!==0)){
+    var sc1=dayPnl>=0?'#dc2626':'#2563eb';
+    sSDP.innerHTML='<span style="color:'+sc1+';font-weight:800;">'+(dayPnl>=0?'+':'')+fmtWon(dayPnl)+'</span>'+
+      '<span style="color:'+sc1+';font-size:10px;margin-left:3px;">('+fmtPct(dayPct)+')</span>';
+  }
+  var sSTP=document.getElementById('stockTotalPnl');
+  if(sSTP&&d.pnl!=null){
+    var spnl=d.pnl||0,spct=d.pct||0;
+    var sc2=spnl>=0?'#dc2626':'#2563eb';
+    sSTP.innerHTML='<span style="color:'+sc2+';font-weight:800;">'+(spnl>=0?'+':'')+fmtWon(spnl)+'</span>'+
+      '<span style="color:'+sc2+';font-size:10px;margin-left:3px;">('+fmtPct(spct)+')</span>';
+  }
+  el=document.getElementById('cmaAmt');    if(el)el.textContent=fmtWon(cmaGrossTotal);
+  el=document.getElementById('cmaMyAmt');  if(el)el.innerHTML=cmaMyTotal>0?('<span style="color:#111827;">MY CMA 총액</span> <span style="color:#059669;">'+fmtWon(cmaMyTotal)+'</span>'):'';
+  el=document.getElementById('cmaPnl');    if(el&&cmaGrossTotal>0)el.innerHTML='<span style="color:#111827;">올해 누적이자</span> <span style="color:#dc2626;">+'+fmtWon(cmaMyPnl)+'</span>';
+  if(cmaDetails.length>0){
+    _cmaDetails=cmaDetails;
+    el=document.getElementById('cmaDayInterest');if(el&&cmaMyDay>0)el.innerHTML='<span style="color:#111827;">전일 이자</span> <span style="color:#dc2626;">+'+fmtWon(cmaMyDay)+'</span>';
+  }else{
+    _cmaDetails=[];
+    el=document.getElementById('cmaDayInterest'); if(el) el.textContent='';
+  }
+  var dCol=dayPnl>=0?'#dc2626':'#2563eb';
+  el=document.getElementById('dayPnl');
+  if(el)el.innerHTML='<span style="color:'+dCol+';font-weight:800;">'+(dayPnl>=0?'+':'')+fmtWon(dayPnl)+'</span>'+
+    '<span style="color:'+dCol+';font-size:11px;font-weight:700;margin-left:4px;">('+fmtPct(dayPct)+')</span>';
+  var pCol=(d.pnl||0)>=0?'#dc2626':'#2563eb';
+  el=document.getElementById('totalPnl');
+  if(el&&d.pnl!=null)el.innerHTML='<span style="color:'+pCol+';font-weight:800;">'+(d.pnl>=0?'+':'')+fmtWon(d.pnl)+'</span>'+
+    '<span style="color:'+pCol+';font-size:11px;font-weight:700;margin-left:4px;">('+(+d.pct>=0?'+':'')+(parseFloat(d.pct)||0).toFixed(2)+'%)</span>';
+  if(fxR>0){
+    el=document.getElementById('fxRate');if(el)el.textContent='$1 = ₩'+fxR.toLocaleString('ko-KR');
+    el=document.getElementById('fxStatus');if(el){el.textContent=fxA?('실시간'+(fxT?' · '+fxT:'')):'수동설정';el.style.color=fxA?'#059669':'#6b7280';}
+  }
+  if(d.accts){
+    el=document.getElementById('stockAcctBadges');
+    if(el)el.innerHTML=d.accts.slice(0,5).map(function(a){
+      return '<span style="font-size:10px;font-weight:800;background:'+a.color+'18;border:1.5px solid '+a.color+'44;border-radius:8px;padding:2px 9px;color:'+a.color+';">'+a.short+'</span>';
+    }).join('');
+  }
+}
+
+/* ════ postMessage ════ */
+var _stockData=null;
+var _summaryReceived=false;
+window.addEventListener('message',function(e){
+  var sf=document.getElementById('stockFrame');
+  var fromStock=!!(sf&&e.source===sf.contentWindow);
+  var d=e.data;if(!d||!d.type)return;
+  if((d.type==='GO_HOME'||d.type==='GO_BACK_CMA'||d.type==='NEED_UID'||d.type==='STOCK_SUMMARY'||d.type==='IFRAME_READY')&&!fromStock)return;
+  if(d.type==='GO_HOME'){_returnToCmaModal=false;showHome();return;}
+  if(d.type==='GO_BACK_CMA'){showHome();if(_returnToCmaModal)setTimeout(openCmaModal,60);return;}
+  if(d.type==='NEED_UID'&&_fbUser){
+    if(sf&&e.source===sf.contentWindow)sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');
+    return;
+  }
+  if(d.type==='IFRAME_READY'){
+    // iframe React 마운트 완료 신호 → UID 즉시 전달
+    if(_fbUser&&sf&&sf.contentWindow){
+      try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+    }
+    return;
+  }
+  if(d.type==='STOCK_SUMMARY'){
+    _stockData=d;
+    _summaryReceived=true;
+    saveSummaryCache(d); // ★ 캐시 저장
+    applySummaryToHome(d);
+  }
+});
+
+/* ════ PIN ════ */
+var PIN_KEY='asset_pin',BIO_KEY='asset_bio_cred';
+var pinBuf='',setupBuf='',setupFirst='',setupPhase=0;
+function getPin(){return localStorage.getItem(PIN_KEY)||'';}
+function setPin(p){localStorage.setItem(PIN_KEY,p);}
+function hasBio(){return !!localStorage.getItem(BIO_KEY);}
+function bioOk(){return !!window.PublicKeyCredential;}
+var RP_ID=location.hostname||'localhost';
+
+function pk(k){if(pinBuf.length>=4)return;pinBuf+=k;dots('d',pinBuf.length);if(pinBuf.length===4)setTimeout(checkPin,120);}
+function pdel(){pinBuf=pinBuf.slice(0,-1);dots('d',pinBuf.length);}
+function checkPin(){
+  if(pinBuf===getPin()){setSt('','');unlock();}
+  else{setSt('PIN이 틀렸습니다','err');for(var i=0;i<4;i++){var d=document.getElementById('d'+i);if(d)d.className='pin-dot err';}pinBuf='';setTimeout(function(){dots('d',0);setSt('','');},700);}
+}
+function sk(k){if(setupBuf.length>=4)return;setupBuf+=k;dots('s',setupBuf.length);if(setupBuf.length===4)setTimeout(handleSetup,120);}
+function sdel(){setupBuf=setupBuf.slice(0,-1);dots('s',setupBuf.length);}
+function handleSetup(){
+  if(setupPhase===0){setupFirst=setupBuf;setupBuf='';setupPhase=1;dots('s',0);document.getElementById('setupSub').textContent='PIN을 한 번 더 입력하세요';}
+  else{
+    if(setupBuf===setupFirst){setPin(setupBuf);setupBuf='';setupFirst='';setupPhase=0;document.getElementById('pinSetup').classList.remove('show');document.getElementById('lockScreen').classList.add('show');document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
+    else{document.getElementById('setupErr').textContent='PIN이 일치하지 않습니다';setupBuf='';setupFirst='';setupPhase=0;dots('s',0);document.getElementById('setupSub').textContent='사용할 4자리 PIN을 입력하세요';setTimeout(function(){document.getElementById('setupErr').textContent='';},2000);}
+  }
+}
+function dots(p,n){for(var i=0;i<4;i++){var d=document.getElementById(p+i);if(d)d.className='pin-dot'+(i<n?' filled':'');}}
+function setSt(msg,type){
+  var e=document.getElementById('lkErr'),h=document.getElementById('lkHint');
+  if(msg&&type==='err'){e.textContent=msg;h.textContent='';}else{e.textContent='';h.textContent=msg;}
+  var bs=document.getElementById('bioStatus');if(bs){bs.textContent='';bs.className='bio-status';}
+}
+
+async function tryBio(){
+  if(!bioOk()||!hasBio()){setSt('지문 미등록. PIN을 입력해주세요','err');document.getElementById('bioRegBtn').style.display='flex';setTimeout(function(){setSt('','');},2000);return;}
+  var bs=document.getElementById('bioStatus');bs.textContent='지문을 인식해주세요...';bs.className='bio-status';
+  try{
+    var bioRaw=localStorage.getItem(BIO_KEY);
+    if(!bioRaw){setSt('지문 정보 없음. PIN 입력해주세요','err');return;}
+    var b;
+    try{b=Uint8Array.from(atob(bioRaw),function(c){return c.charCodeAt(0);});}
+    catch(e){localStorage.removeItem(BIO_KEY);setSt('지문 정보 오류. 다시 등록해주세요','err');return;}
+    await navigator.credentials.get({publicKey:{rpId:RP_ID,challenge:crypto.getRandomValues(new Uint8Array(32)),timeout:60000,userVerification:'required',allowCredentials:[{id:b,type:'public-key'}]}});
+    bs.textContent='';unlock();
+  }catch(e){
+    if(e.name==='NotAllowedError'||e.name==='InvalidStateError'||e.name==='SecurityError'){localStorage.removeItem(BIO_KEY);bs.textContent='';bs.className='bio-status';setSt('','');document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 새로 등록해주세요','');}
+    else{bs.textContent='인식 실패. PIN을 입력해주세요';bs.className='bio-status err';setTimeout(function(){bs.textContent='';bs.className='bio-status';},2000);}
+  }
+}
+async function enrollBio(){
+  if(!bioOk()){document.getElementById('bioStatus').textContent='생체인식 미지원';return;}
+  var bs=document.getElementById('bioStatus');bs.textContent='지문을 인식해주세요...';
+  try{
+    var c=await navigator.credentials.create({publicKey:{rp:{id:RP_ID,name:'YKH자산'},user:{id:new TextEncoder().encode('asset-user'),name:'user',displayName:'사용자'},challenge:crypto.getRandomValues(new Uint8Array(32)),pubKeyCredParams:[{alg:-7,type:'public-key'},{alg:-257,type:'public-key'}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},timeout:60000}});
+    var rawArr=new Uint8Array(c.rawId);
+    var binary='';
+    for(var bi=0;bi<rawArr.length;bi++)binary+=String.fromCharCode(rawArr[bi]);
+    localStorage.setItem(BIO_KEY,btoa(binary));
+    bs.textContent='지문 등록 완료!';bs.className='bio-status ok';
+    document.getElementById('bioRegBtn').style.display='none';
+    setSt('버튼으로 지문 잠금해제','');
+    setTimeout(backupToCloud,500);
+  }catch(e){bs.textContent=e.name==='NotAllowedError'?'지문 취소됨':'등록 실패';bs.className='bio-status err';}
+}
+
+/* ════ 앱 흐름 ════ */
+function unlock(){document.getElementById('lockScreen').classList.remove('show');document.getElementById('pinSetup').classList.remove('show');showHome();}
+var _summaryTimeoutId=null;
+function showHome(){
+  document.getElementById('homeScreen').classList.add('show');
+  document.getElementById('appLayer').classList.remove('show');
+  document.getElementById('stockFrame').classList.remove('show');
+  var now=new Date(),days=['일','월','화','수','목','금','토'];
+  try{
+    var el=document.getElementById('homeDateTxt');
+    if(el)el.textContent=now.getFullYear()+'년 '+(now.getMonth()+1)+'월 '+now.getDate()+'일 ('+days[now.getDay()]+')';
+  }catch(e){}
+  // ★ 캐시 즉시 복원 (실시간 데이터 오기 전 홈화면 채우기)
+  if(!_summaryReceived){
+    var cached=loadSummaryCache();
+    if(cached)applySummaryToHome(cached);
+  }
+  // ★ 8초 내 실시간 데이터 미수신 시 캐시로 최종 fallback
+  if(_summaryTimeoutId)clearTimeout(_summaryTimeoutId);
+  _summaryTimeoutId=setTimeout(function(){
+    if(!_summaryReceived){
+      var c=loadSummaryCache();
+      if(c)applySummaryToHome(c);
+    }
+  },8000);
+}
+function enterApp(which){
+  if(which!=='stock')return;
+  document.getElementById('homeScreen').classList.remove('show');
+  document.getElementById('appLayer').classList.add('show');
+  document.getElementById('stockFrame').classList.add('show');
+}
+var _stockFrameLoaded=false;
+function onStockFrameLoad(){
+  _stockFrameLoaded=true;
+  var sf=document.getElementById('stockFrame');
+  if(sf&&sf.contentWindow){
+    if(_fbUser){
+      try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+    }
+    if(_pendingStockMessage){
+      try{sf.contentWindow.postMessage(_pendingStockMessage,'*');}catch(e){}
+      _pendingStockMessage=null;
+    }
+  }
+}
+function lockApp(){
+  document.getElementById('homeScreen').classList.remove('show');
+  document.getElementById('appLayer').classList.remove('show');
+  document.getElementById('stockFrame').classList.remove('show');
+  document.getElementById('lockScreen').classList.add('show');
+  pinBuf='';dots('d',0);setSt('','');
+  if(hasBio())setSt('버튼으로 지문 잠금해제','');
+  else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
+}
+
+/* ════ 시작 ════ */
+function startApp(){
+  _appStarted=true;if(_fbFallback)clearTimeout(_fbFallback);
+  if(!getPin()){document.getElementById('pinSetup').classList.add('show');}
+  else{
+    document.getElementById('lockScreen').classList.add('show');
+    if(hasBio())setSt('버튼으로 지문 잠금해제','');
+    else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
+    if(!bioOk())document.getElementById('bioRegBtn').style.display='none';
+    else PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function(ok){if(!ok)document.getElementById('bioRegBtn').style.display='none';}).catch(function(){});
+  }
+}
+
+// 비상 폴백: Firebase 5초 내 미응답시 강제 앱 시작
+var _appStarted=false,_fbFallback=null;
+_fbFallback=setTimeout(function(){
+  if(!_appStarted){console.warn('[fallback] Firebase timeout');startApp();}
+},5000);
+
+(async function init(){
+  try{
+    var fbOk=await initFirebase();
+    if(!fbOk){startApp();return;}
+    await new Promise(function(resolve){
+      if(!window._fbOnAuth){resolve();return;}
+      var unsub=window._fbOnAuth(_fbAuth,function(u){unsub();_fbUser=u;resolve();});
+      setTimeout(resolve,5000);
+    });
+    if(_fbUser){updateSyncStatus(true,_fbUser.email);setTimeout(backupToCloud,3000);}
+    else{updateSyncStatus(false,null);localStorage.setItem('fb_login_skipped','1');}
+  }catch(e){console.warn('[init]',e);}
+  startApp();
+})();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
