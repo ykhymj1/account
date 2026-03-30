@@ -14,7 +14,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-html,body{margin:0;padding:0;background:#ffffff;overflow-x:hidden;font-family:'Noto Sans KR',sans-serif;}
+html,body{margin:0;padding:0;background:#ffffff;overflow:hidden;font-family:'Noto Sans KR',sans-serif;}
 button{touch-action:manipulation;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
 input,select{-webkit-appearance:none;appearance:none;font-size:16px!important;font-family:'Noto Sans KR',sans-serif;}
 input:focus,select:focus{border-color:#60a5fa!important;outline:none;}
@@ -1204,6 +1204,7 @@ function App(){
   const touchStartX=useRef(0);
   const touchStartY=useRef(0);
   const handleTouchStart=useCallback((e)=>{
+    if(!e.touches||!e.touches[0])return; // ★ 방어 코드
     touchStartX.current=e.touches[0].clientX;
     touchStartY.current=e.touches[0].clientY;
   },[]);
@@ -1219,11 +1220,20 @@ function App(){
     const el=document.getElementById('mainScroll');
     if(!el)return;
     const onMove=(e)=>{
+      // ★★★ [스크롤수정] touches가 없으면 즉시 리턴 (런타임 오류 방지)
+      if(!e.touches||!e.touches[0])return;
       const dx=touchStartX.current-e.touches[0].clientX;
       const dy=touchStartY.current-e.touches[0].clientY;
+      const absDx=Math.abs(dx);
+      const absDy=Math.abs(dy);
+
+      // ★★★ 수직 방향이 우세하면 절대 preventDefault 안 함 → 네이티브 스크롤 허용
+      if(absDy>absDx*0.8)return;
+
       const curAcctInfo=ACCOUNTS.find(a=>a.id===acctTabRef.current);
       const isCmaBackContext=tabRef.current==="accounts"&&curAcctInfo?.cmaType&&cmaReturnContext.current?.active;
-      if((dx<-30&&Math.abs(dx)>Math.abs(dy)*1.5)||(isCmaBackContext&&Math.abs(dx)>30&&Math.abs(dx)>Math.abs(dy)*1.2)){
+      // 수평 스와이프(좌→우 또는 CMA 컨텍스트)일 때만 preventDefault
+      if((dx<-30&&absDx>absDy*1.5)||(isCmaBackContext&&absDx>30&&absDx>absDy*1.2)){
         e.preventDefault();
       }
     };
@@ -1240,6 +1250,7 @@ function App(){
 
   // ★ CMA 계좌 상세: 아래로 당기면 홈으로 복귀 / 그 외 탭은 새로고침
   const handleTouchEnd=useCallback((e)=>{
+    if(!e.changedTouches||!e.changedTouches[0])return; // ★ 방어 코드
     const endY=e.changedTouches[0].clientY;
     const endX=e.changedTouches[0].clientX;
     const diffY=endY-touchStartY.current;
@@ -1926,7 +1937,15 @@ function App(){
   return(
     <div
       id="mainScroll"
-      style={{minHeight:"100vh",background:C.bg,color:C.text,paddingBottom:80,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",overscrollBehaviorX:"contain"}}
+      style={{
+        position:"fixed",inset:0,
+        overflowY:"scroll",
+        WebkitOverflowScrolling:"touch",
+        overscrollBehavior:"none",
+        background:C.bg,color:C.text,
+        paddingBottom:80,
+        maxWidth:480,margin:"0 auto"
+      }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -2014,7 +2033,7 @@ function App(){
       </div>
 
       {/* 탭 */}
-      <div style={{display:"flex",background:"#ffffff",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:10}}>
+      <div style={{display:"flex",background:"#ffffff",borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:10,width:"100%"}}>
         {[["dash","📊","대시보드"],["accounts","💼","계좌별"],["graph","📈","그래프"],["ai","🤖","AI"]].map(([k,e,v])=>(
           <button key={k} onClick={()=>setTab(k)} style={{flex:1,minHeight:54,padding:"7px 0 9px",fontSize:10,fontWeight:700,background:"none",border:"none",color:tab===k?C.accent:C.muted,borderBottom:tab===k?`2px solid ${C.accent}`:"2px solid transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
             <span style={{fontSize:19}}>{e}</span>{v}
