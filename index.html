@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <base href="https://ykhymj1.github.io/account/"/>
+<!-- ★ account 레포 배포 URL: https://ykhymj1.github.io/account/ -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -661,9 +662,14 @@ window.addEventListener('message',function(e){
     return;
   }
   if(d.type==='IFRAME_READY'){
-    // iframe React 마운트 완료 신호 → UID 즉시 전달
+    // ★★ [버그수정] iframe React 마운트 완료 신호
+    // → UID 전달 + pending 메시지도 여기서 확실히 처리
     if(_fbUser&&sf&&sf.contentWindow){
       try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+    }
+    if(_pendingStockMessage&&sf&&sf.contentWindow){
+      var pm=_pendingStockMessage;_pendingStockMessage=null;
+      try{sf.contentWindow.postMessage(pm,'*');}catch(e){}
     }
     return;
   }
@@ -774,14 +780,17 @@ var _stockFrameLoaded=false;
 function onStockFrameLoad(){
   _stockFrameLoaded=true;
   var sf=document.getElementById('stockFrame');
-  if(sf&&sf.contentWindow){
-    if(_fbUser){
-      try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
-    }
-    if(_pendingStockMessage){
-      try{sf.contentWindow.postMessage(_pendingStockMessage,'*');}catch(e){}
-      _pendingStockMessage=null;
-    }
+  if(!sf||!sf.contentWindow)return;
+  // ★ FB_UID 전달 — IFRAME_READY 신호 전까지는 대기하므로 여기서도 시도
+  if(_fbUser){
+    try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+  }
+  // ★ pending 메시지 재시도: IFRAME_READY 이후에 처리되도록 약간 지연
+  if(_pendingStockMessage){
+    var pm=_pendingStockMessage;_pendingStockMessage=null;
+    setTimeout(function(){
+      try{sf.contentWindow.postMessage(pm,'*');}catch(e){}
+    },200);
   }
 }
 function lockApp(){
