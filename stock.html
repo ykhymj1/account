@@ -266,22 +266,22 @@ function portfolioInit() {
     });
 }
 portfolioInit();
-// ★★★ iframe 모드: Babel JSX 파싱 완료를 안전하게 감지하여 잠금 없이 실행
-// [버그수정] requestAnimationFrame만으로는 Babel 비동기 파싱을 놓칠 수 있음
-// → setInterval 폴링 + rAF 병행으로 확실히 감지
+// ★★★ [버그수정] iframe 모드: setInterval 100ms 폴링 + rAF 병행으로 Babel 파싱 완료 확실히 감지
+// requestAnimationFrame 단독으로는 Babel 비동기 파싱 완료 전에 체크가 끝나 빈화면 발생
 if(window.self!==window.top){
   var _iframeUnlockDone=false;
+  var _iframeUnlockInterval=null;
   function _doIframeUnlock(){
     if(_iframeUnlockDone)return;
     _iframeUnlockDone=true;
     clearInterval(_iframeUnlockInterval);
     unlock();
   }
-  // ★ 100ms 간격으로 __mountApp 정의 여부 폴링 (Babel 파싱 완료 감지)
-  var _iframeUnlockInterval=setInterval(function(){
-    if(typeof window.__mountApp==="function") _doIframeUnlock();
+  // 100ms 간격 폴링 — Babel 파싱 완료를 놓치지 않음
+  _iframeUnlockInterval=setInterval(function(){
+    if(typeof window.__mountApp==="function")_doIframeUnlock();
   },100);
-  // ★ rAF도 병행 (빠른 환경 대응)
+  // rAF도 병행 (빠른 환경 대응)
   function _scheduleUnlock(){
     if(_iframeUnlockDone)return;
     if(typeof window.__mountApp==="function"){_doIframeUnlock();return;}
@@ -292,7 +292,7 @@ if(window.self!==window.top){
   }else{
     requestAnimationFrame(_scheduleUnlock);
   }
-  // ★ 안전망: 15초 내 미실행 시 강제 실행 (이전 12초에서 연장)
+  // 안전망: 15초 내 미실행 시 강제 실행
   setTimeout(function(){
     if(!_iframeUnlockDone){_iframeUnlockDone=true;clearInterval(_iframeUnlockInterval);unlock();}
   },15000);
@@ -801,6 +801,30 @@ function GraphView({allAccounts,myTotal,myPnl,myPct,history}){
 }
 
 
+/* ★★★ [FREEZING핵심수정] CountdownBar — 완전 독립 컴포넌트
+   매초 자기 자신만 리렌더 → App(계좌 탭 등) 전혀 영향 없음
+   countdownRef를 prop으로 받아 자체 setInterval로 표시값만 관리 */
+function CountdownBar({countdownRef,fetching,accent,border,muted,onRefresh,lastUp}){
+  const[disp,setDisp]=useState(()=>countdownRef.current);
+  useEffect(()=>{
+    const t=setInterval(()=>setDisp(countdownRef.current),1000);
+    return()=>clearInterval(t);
+  },[countdownRef]);
+  const total=disp>180?600:180;
+  const pct=Math.max(0,Math.min(100,(disp/total)*100));
+  const mins=Math.floor(disp/60),secs=(disp%60).toString().padStart(2,"0");
+  return(<>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+      <div style={{flex:1,height:3,background:"#e5e7eb",borderRadius:2,overflow:"hidden"}}>
+        <div style={{height:"100%",background:accent,width:`${pct}%`,transition:"width 1s linear",borderRadius:2}}/>
+      </div>
+      <span style={{fontSize:11,color:muted,whiteSpace:"nowrap"}}>{fetching?"⏳ 갱신중...":`🔄 ${mins}:${secs}`}</span>
+      <button onClick={onRefresh} style={{minHeight:36,padding:"0 12px",background:"none",border:`1px solid ${border}`,borderRadius:8,color:accent,fontSize:12}}>지금</button>
+    </div>
+    <div style={{fontSize:11,color:muted,marginTop:3}}>{lastUp?`시세: ${lastUp}`:"⏳ 시세 갱신 중..."} · ETF·주식·환율 자동 / 펀드·CMA·적금 자동계산</div>
+  </>);
+}
+
 function ConfirmModal({msg,onOk,onCancel}){
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px"}}>
     <div style={{background:"#ffffff",borderRadius:18,padding:26,width:"100%",maxWidth:340,border:`1px solid ${C.border}`}}>
@@ -1090,29 +1114,13 @@ function AcctHeaderUsd({curData, C, won, usd, pf, ProfitBadge}){
   </div>);
 }
 
-/* ★ [freezing 핵심수정] CountdownBar: React.memo로 완전 격리
-   countdown state가 매초 바뀌어도 App 전체가 리렌더되지 않고
-   이 컴포넌트만 리렌더됩니다 */
-const CountdownBar=React.memo(function CountdownBar({countdown,totalInterval,fetching,lastUp,C,onRefresh}){
-  const mins=Math.floor(countdown/60),secs=(countdown%60).toString().padStart(2,"0");
-  return(<>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
-      <div style={{flex:1,height:3,background:"#e5e7eb",borderRadius:2,overflow:"hidden"}}>
-        <div style={{height:"100%",background:C.accent,width:`${(countdown/totalInterval)*100}%`,transition:"width 1s linear",borderRadius:2}}/>
-      </div>
-      <span style={{fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>{fetching?"⏳ 갱신중...":`🔄 ${mins}:${secs}`}</span>
-      <button onClick={onRefresh} style={{minHeight:36,padding:"0 12px",background:"none",border:`1px solid ${C.border}`,borderRadius:8,color:C.accent,fontSize:12}}>지금</button>
-    </div>
-    <div style={{fontSize:11,color:C.muted,marginTop:3}}>{lastUp?`시세: ${lastUp}`:"⏳ 시세 갱신 중..."} · ETF·주식·환율 자동 / 펀드·CMA·적금 자동계산</div>
-  </>);
-});
-
 function App(){
   const saved=useMemo(()=>ld(SK,{holdings:{},fxRate:DEFAULT_FX}),[]);
   const[tab,setTab]=useState("dash");
   const[acctTab,setAcctTab]=useState("amt");
   // 계좌 탭 전환 시 종목편집 모드 리셋
-  const switchAcctTab=useCallback((id)=>{setAcctTab(id);setEditingItemOrder(false);},[]); // setAcctTab/setEditingItemOrder are stable setState refs — [] is correct
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const switchAcctTab=useCallback((id)=>{setAcctTab(id);setEditingItemOrder(false);},[]);
   const[holdings,setHoldings]=useState(()=>saved.holdings||{});
   // ★ 환율: 프리페치 캐시 → localStorage 저장값 → 기본값 순서로 복원
   const[fxRate,setFxRate]=useState(()=>{
@@ -1139,7 +1147,8 @@ function App(){
     return cached;
   }); // ★ 캐시에서 즉시 복원 (시간 제거)
   const[fetching,setFetching]=useState(false);
-  const[countdown,setCountdown]=useState(()=>{const d=new Date(),h=d.getHours(),day=d.getDay();return(day>0&&day<6&&h>=9&&h<16)?180:600;});
+  // ★★★ [FREEZING핵심수정] countdown을 state에서 완전 제거 → ref만 사용
+  // (setCountdown이 매초 App 전체를 리렌더시켰던 핵심 원인)
   const[lastUp,setLastUp]=useState(null);
   const[modal,setModal]=useState(null);
   const[editIdx,setEditIdx]=useState(null);
@@ -1161,6 +1170,8 @@ function App(){
   const[editingAcctOrder,setEditingAcctOrder]=useState(false);
   // ★ 종목 순서 편집 모드 (계좌별)
   const[editingItemOrder,setEditingItemOrder]=useState(false);
+  // ★★ [FREEZING수정] pullRefreshing을 모든 useState와 함께 최상단으로 이동 (훅 순서 안정화)
+  const[pullRefreshing,setPullRefreshing]=useState(false);
   const holdingsRef=useRef(holdings);
   useEffect(()=>{holdingsRef.current=holdings;},[holdings]);
   // ★ fxRateRef: 환율을 ref로도 유지 → fetchPrices 내 클로저에서 최신값 즉시 사용
@@ -1172,8 +1183,7 @@ function App(){
 
   useEffect(()=>{navStateRef.current={tab,acctTab};},[tab,acctTab]);
 
-  // ★ React 마운트 완료 → 부모에 IFRAME_READY 신호 발송 (UID 즉시 요청용)
-  // ★★ [버그수정] 한 번만 발송하면 부모가 놓칠 수 있어 300ms 간격으로 3회 재시도
+  // ★ React 마운트 완료 → 부모에 IFRAME_READY 신호 발송 (3회 재시도로 누락 방지)
   useEffect(()=>{
     const send=()=>{try{window.parent.postMessage({type:'IFRAME_READY'},'*');}catch(e){}};
     send();
@@ -1221,16 +1231,14 @@ function App(){
     return()=>el.removeEventListener('touchmove',onMove);
   },[]);// eslint-disable-line
 
-  const[pullRefreshing,setPullRefreshing]=useState(false);
-  // ★ [freezing 수정] pullRefreshing/fetchPrices/fetching 모두 ref로 관리
-  // → handleTouchEnd가 절대 재생성되지 않아 touchmove 충돌·freezing 완전 방지
+  // ★★ [FREEZING수정] pullRefreshing/fetchPrices/fetching ref로 관리
+  // → handleTouchEnd 재생성 차단 (pullRefreshing useState는 위에서 이미 선언됨)
   const pullRefreshingRef=useRef(false);
   const fetchPricesRef=useRef(null);
-  const fetchingRef=useRef(false); // ★ fetching을 ref로도 유지
+  const fetchingRef=useRef(false);
   useEffect(()=>{pullRefreshingRef.current=pullRefreshing;},[pullRefreshing]);
 
   // ★ CMA 계좌 상세: 아래로 당기면 홈으로 복귀 / 그 외 탭은 새로고침
-  // ★★ deps에서 fetching 제거 → [] 고정으로 함수 재생성 완전 차단 (freezing 핵심 수정)
   const handleTouchEnd=useCallback((e)=>{
     const endY=e.changedTouches[0].clientY;
     const endX=e.changedTouches[0].clientX;
@@ -1250,7 +1258,6 @@ function App(){
         try{window.parent.postMessage({type:'GO_HOME'},'*');}catch(err){}
         return;
       }
-      // ★ fetching은 ref로 체크 → 함수 재생성 불필요
       if(!fetchingRef.current&&!pullRefreshingRef.current&&fetchPricesRef.current){
         setPullRefreshing(true);
         pullRefreshingRef.current=true;
@@ -1264,14 +1271,16 @@ function App(){
     const idx=TABS.indexOf(tabRef.current);
     if(dx>0&&idx<TABS.length-1)setTab(TABS[idx+1]);
     else if(dx<0&&idx>0)setTab(TABS[idx-1]);
-  },[goBackFromCmaContext]); // ★ fetching 제거 — fetchingRef로 대체
+  },[goBackFromCmaContext]); // ★★ fetching 제거 → fetchingRef 사용으로 재생성 차단
 
   useEffect(()=>{sv(SK,{holdings,fxRate});},[holdings,fxRate]);
+
+  // [이하 두 useEffect는 allAccounts/myTotal 정의 이후로 이동됨 - TDZ 버그 수정]
 
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),2800);return()=>clearTimeout(t);},[toast]);
 
   // ★ 안드로이드 뒤로가기/좌측스와이프 앱종료 방지
-  // ★★ [버그수정] iframe 내부에서는 history.pushState 호출 안 함 → 부모 페이지 URL 충돌 방지
+  // ★★ [버그수정] iframe 내부에서는 history.pushState 호출 차단 → 부모 URL 충돌·freezing 방지
   useEffect(()=>{
     const isIframe=window.self!==window.top;
     if(!isIframe){
@@ -1369,7 +1378,7 @@ function App(){
 
   /* ★ 시세 조회 v6 - Promise.race 병렬 우선 + 순차 폴백 */
   const fetchPrices=useCallback(async(hMap)=>{
-    setFetching(true);fetchingRef.current=true; // ★ ref 동기화
+    setFetching(true);fetchingRef.current=true;
 
     // 1. 고유 티커 수집 (중복 제거)
     const tickerMap={};
@@ -1387,8 +1396,7 @@ function App(){
     // 종목 없으면 종료
     if(allTickers.length===0){
       setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
-      countdownRef.current=600;totalIntervalRef.current=600;
-      setCountdown(600);setFetching(false);return;
+      countdownRef.current=600;setFetching(false);fetchingRef.current=false;return;
     }
 
     // 4. ★★ 단일 티커 조회: 최대한 많은 루트로 병렬 시도 (성공률 극대화)
@@ -1498,12 +1506,9 @@ function App(){
     }));
 
     setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
-    const d2=new Date(),h2=d2.getHours(),day2=d2.getDay();
-    const nextInterval=(day2>0&&day2<6&&h2>=9&&h2<16)?180:600;
-    countdownRef.current=nextInterval;
-    totalIntervalRef.current=nextInterval; // ★ CountdownBar 분모 동기화
-    setCountdown(nextInterval);
-    setFetching(false);fetchingRef.current=false; // ★ ref 동기화
+    // ★★★ setCountdown 완전 제거 → countdownRef 직접 업데이트 (App 리렌더 없음)
+    countdownRef.current=getRefreshInterval();
+    setFetching(false);fetchingRef.current=false;
   },[fetchFxRate]);
 
   // ★ [freezing 수정] fetchPricesRef를 fetchPrices 정의 직후 동기화
@@ -1522,27 +1527,22 @@ function App(){
     scheduleFx();
     return()=>{clearTimeout(initT);if(fxTimerRef.id)clearTimeout(fxTimerRef.id);};
   },[]);
-  // ★ 시세 카운트다운: 평일 장중(9~16시) 3분 / 그 외 10분
-  const getRefreshInterval=()=>{
-    const d=new Date(),h=d.getHours(),day=d.getDay();
-    if(day>0&&day<6&&h>=9&&h<16)return 180;
-    return 600;
-  };
-  // ★ [freezing 수정] countdown을 ref로도 관리 → setInterval이 fetchPrices에 의존하지 않게 분리
-  // ★★ totalIntervalRef: 렌더 중 getRefreshInterval() 직접 호출 완전 차단 (매초 리렌더 폭발 방지)
+  // ★★★ [FREEZING 핵심수정] countdown을 완전히 ref로만 관리
+  // setCountdown(state)를 매초 호출하면 전체 App 리렌더 → 계좌탭에서 폭발적 freezing
+  // → countdown은 ref만 사용, 렌더에 필요한 표시값은 별도 CountdownBar 컴포넌트로 분리
+  const getRefreshInterval=()=>{const d=new Date(),h=d.getHours(),day=d.getDay();return(day>0&&day<6&&h>=9&&h<16)?180:600;};
+  // ★★★ [FREEZING 핵심수정] countdownRef만 사용 - state 완전 제거
+  // setInterval이 setCountdown(state)를 호출하지 않으므로 App 리렌더 없음
   const countdownRef=useRef(getRefreshInterval());
-  const totalIntervalRef=useRef(getRefreshInterval()); // 렌더에서 사용하는 최대값 ref
-  useEffect(()=>{countdownRef.current=countdown;},[countdown]);
   useEffect(()=>{
     const t=setInterval(()=>{
       countdownRef.current=countdownRef.current-1;
       if(countdownRef.current<=0){
-        const next=getRefreshInterval();
-        countdownRef.current=next;
-        totalIntervalRef.current=next; // 구간 전환 시 최대값 동기화
+        countdownRef.current=getRefreshInterval();
         if(fetchPricesRef.current)fetchPricesRef.current(holdingsRef.current);
       }
-      setCountdown(countdownRef.current);
+      // ★ setCountdown 호출 완전 제거 → App 리렌더 없음
+      // CountdownBar 컴포넌트가 자체적으로 자신만 리렌더
     },1000);
     return()=>clearInterval(t);
   },[]);// eslint-disable-line
@@ -1605,8 +1605,12 @@ function App(){
   },[allAccounts]);
   const myPct=myTotal.invested>0?myPnl/myTotal.invested*100:0;
 
-  // ★ 수익률 스냅샷 저장 - prices 변경될 때마다 (오늘 데이터 즉시 갱신)
-  // ★★ [버그수정] allAccounts/myTotal 정의 이후로 이동 (TDZ 오류 완전 해결)
+  const curAcct=useMemo(()=>ACCOUNTS.find(a=>a.id===acctTab),[acctTab]);
+  const curData=useMemo(()=>calcAcct(acctTab),[calcAcct,acctTab]);
+  const mAcct=useMemo(()=>ACCOUNTS.find(a=>a.id===(form._acctId||acctTab)),[form._acctId,acctTab]);
+
+  // ★★★ [버그수정] allAccounts/myTotal 정의 이후로 이동 — TDZ(전방참조) 오류 완전 해결
+  // 수익률 스냅샷 저장 - prices 변경될 때마다 (오늘 데이터 즉시 갱신)
   useEffect(()=>{
     if(!allAccounts.length)return;
     const today=new Date().toISOString().slice(0,10);
@@ -1623,8 +1627,7 @@ function App(){
     }catch(e){}
   },[allAccounts,myTotal,prices]);
 
-  // ★ postMessage: 부모(index.html)에 요약 데이터 전송
-  // ★★ [버그수정] allAccounts/myTotal 정의 이후로 이동 (TDZ 오류 완전 해결)
+  // postMessage: 부모(index.html)에 요약 데이터 전송
   useEffect(()=>{
     const accts=allAccounts.filter(a=>a.current>0).map(a=>({short:a.short,color:a.color}));
     const cmaAccts=allAccounts.filter(ac=>ac.cmaType);
@@ -1651,32 +1654,20 @@ function App(){
         type:'STOCK_SUMMARY',
         total:myTotal.current,
         personalTotal:myTotal.current,
-        grossTotal,
-        stockOnly,
-        stockGrossTotal,
-        mySixAcctTotal,
+        grossTotal,stockOnly,stockGrossTotal,mySixAcctTotal,
         invested:myTotal.invested,
-        pnl:myPnl,
-        pct:myPct,
-        cmaTotal,
-        cmaPnl,
+        pnl:myPnl,pct:myPct,
+        cmaTotal,cmaPnl,
         cmaDetails:cmaAccts.map(ac=>({
-          id:ac.id,
-          label:ac.label,
-          icon:ac.icon,
-          color:ac.color,
-          shared:ac.shared,
+          id:ac.id,label:ac.label,icon:ac.icon,color:ac.color,shared:ac.shared,
           principal:(ac.list||[]).reduce((s,h)=>s+(parseFloat(h.principal)||0),0),
-          current:ac.current,
-          pnl:ac.pnl,
-          pct:ac.pct,
+          current:ac.current,pnl:ac.pnl,pct:ac.pct,
           totalInterest:ac.totalInterest||0,
           rate:(ac.list||[])[0]?.rate||0,
           days:(ac.list||[])[0]?.days||0,
           dailyInterest:(ac.list||[]).reduce((s,h)=>s+(h.dailyInterest||0),0),
           items:(ac.list||[]).map((h,idx)=>({
-            idx,
-            name:h.name,
+            idx,name:h.name,
             principal:parseFloat(h.principal)||0,
             current:h.current||0,
             yearInterest:h.yearInterest??h.pnl??0,
@@ -1688,19 +1679,10 @@ function App(){
             memo:h.memo||''
           }))
         })),
-        dayPnl,
-        dayPct,
-        fxRate,
-        fxAuto,
-        fxTime,
-        accts
+        dayPnl,dayPct,fxRate,fxAuto,fxTime,accts
       },'*');
     }catch(e){}
   },[myTotal,myPnl,myPct,allAccounts,fxRate,fxAuto,fxTime]);
-
-  const curAcct=useMemo(()=>ACCOUNTS.find(a=>a.id===acctTab),[acctTab]);
-  const curData=useMemo(()=>calcAcct(acctTab),[calcAcct,acctTab]);
-  const mAcct=useMemo(()=>ACCOUNTS.find(a=>a.id===(form._acctId||acctTab)),[form._acctId,acctTab]);
 
   /* ★ 계좌 순서 변경 */
   const moveAcct=useCallback((id,dir)=>{
@@ -1856,16 +1838,13 @@ function App(){
 
   useEffect(()=>{
     const onParentMessage=(e)=>{
-      // ★★ [버그수정] iframe 내에서 부모 메시지만 허용
-      // window.parent가 없으면(직접 접속) 모든 메시지 허용
+      // ★★ [버그수정] iframe 안에서는 부모 메시지만 수락
+      // window.self===window.top이면 직접 접속 → 모든 메시지 허용
       if(window.self!==window.top&&window.parent&&e.source!==window.parent)return;
       const d=e.data||{};
       if(!d||typeof d!=="object")return;
-      // ★ FB_UID 메시지 수신 (Firebase 로그인 동기화)
-      if(d.type==="FB_UID"){
-        // stock.html 자체 Firebase는 onAuthStateChanged로 처리되므로 여기선 무시
-        return;
-      }
+      // FB_UID는 stock.html 자체 Firebase onAuthStateChanged가 처리하므로 무시
+      if(d.type==="FB_UID")return;
       if(d.type==="OPEN_CMA_ACCOUNT"){
         cmaReturnContext.current={active:true,accountId:d.accountId||"mycma",action:d.type};
         setTab("accounts");
@@ -1925,11 +1904,12 @@ function App(){
   },[aiQ,aiLoad,allAccounts,myPnl,myPct]);
 
   /* ★ 카드 상세 - 미국주식/ETF는 달러+원화 동시 표시 */
-  const cardDet=useCallback((h,ac)=>{
+  const cardDet=(h,ac)=>{
     if(ac.directInput)return[["투자원금",won(h.invested)],["평가금액",won(h.current)],["수익금",`${h.pnl>0?"+":""}${won(h.pnl)}`]];
     if(h.calcMode==="cma")return[["원금",won(h.principal)],["경과",`${h.days||0}일`],["전일이자",`+${won(h.dailyInterest)}`]];
     if(h.calcMode==="savings")return[["원금",won(h.principal)],["경과",`${h.days||0}일`],["이자",`+${won(h.pnl)}`]];
     if(h.calcMode==="fund")return[["보유좌수",nf(h.qty)],["기준가",`${nf(parseFloat(h.nav||0).toFixed(2))}원`],["수익금",`${h.pnl>0?"+":""}${won(h.pnl)}`]];
+    // ★ 미국주식/ETF: 달러+원화 동시
     if(h.currency==="USD"){
       const qty=parseFloat(h.qty)||0;
       const pnlUsd=(h.cur-h.avg)*qty;
@@ -1940,7 +1920,7 @@ function App(){
       ];
     }
     return[["평균단가",won(h.avg)],["현재가",won(h.cur)],["수익금",`${h.pnl>0?"+":""}${won(h.pnl)}`]];
-  },[]);
+  };
 
   /* ── 렌더 ── */
   return(
@@ -2014,14 +1994,15 @@ function App(){
           ※ AMT/AMT CMA 1/2 · {fetching&&!fxAuto?"⏳ 환율 조회중...":fxAuto?`$1=₩${fxRate} · 환율 ${fxTime}`:`$1=₩${fxRate}`}
         </div>
 
-        {/* 자동갱신 바 — memo 컴포넌트: countdown 변경 시 App 전체 리렌더 차단 */}
+        {/* 자동갱신 바 ★★★ CountdownBar: 독립 컴포넌트 → App 리렌더 없이 자체 1초 갱신 */}
         <CountdownBar
-          countdown={countdown}
-          totalInterval={totalIntervalRef.current}
+          countdownRef={countdownRef}
           fetching={fetching}
-          lastUp={lastUp}
-          C={C}
+          accent={C.accent}
+          border={C.border}
+          muted={C.muted}
           onRefresh={()=>fetchPrices(holdingsRef.current)}
+          lastUp={lastUp}
         />
         <div style={{display:"flex",gap:8,marginTop:12}}>
           <button onClick={exportData} style={{flex:1,minHeight:44,background:C.card2,border:`1px solid ${C.border}`,borderRadius:12,color:"#a78bfa",fontSize:13,fontWeight:700}}>💾 백업</button>
