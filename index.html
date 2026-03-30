@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<base href="https://ykhymj1.github.io/Total-stock/"/>
+<base href="https://ykhymj1.github.io/account/"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -482,13 +482,15 @@ function getCmaItems(c){
   return (c&&c.items&&c.items.length)?c.items:[{idx:0,name:c.label,principal:c.principal,current:c.current,yearInterest:c.pnl,totalInterest:c.totalInterest,dailyInterest:c.dailyInterest,rate:c.rate,days:c.days,memo:''}];
 }
 function getCmaYearInterest(c){
+  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);
+    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0)*sh;
   },0);
 }
 function getCmaDailyInterest(c){
+  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.dailyInterest)||0);
+    return sum+((item&&item.dailyInterest)||0)*sh;
   },0);
 }
 function renderCmaCard(c){

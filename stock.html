@@ -268,18 +268,29 @@ function portfolioInit() {
 portfolioInit();
 // iframe 모드: Babel JSX 파싱 완료 후 잠금 없이 바로 실행
 if(window.self!==window.top){
-  // __mountApp이 정의될 때까지 폴링 (Babel 파싱 대기)
-  var _iframeUnlockTimer = setInterval(function(){
-    if(typeof window.__mountApp === "function"){
-      clearInterval(_iframeUnlockTimer);
+  var _iframeUnlockDone=false;
+  function _tryIframeUnlock(){
+    if(_iframeUnlockDone)return;
+    if(typeof window.__mountApp==="function"){
+      _iframeUnlockDone=true;
       unlock();
     }
-  }, 50);
-  // 최대 10초 안에 실행 안 되면 강제 실행
+  }
+  // DOMContentLoaded 이후 requestAnimationFrame으로 체크 (setInterval 제거)
+  function _scheduleUnlock(){
+    if(_iframeUnlockDone)return;
+    _tryIframeUnlock();
+    if(!_iframeUnlockDone) requestAnimationFrame(_scheduleUnlock);
+  }
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",function(){requestAnimationFrame(_scheduleUnlock);});
+  }else{
+    requestAnimationFrame(_scheduleUnlock);
+  }
+  // 최대 12초 안에 실행 안 되면 강제 실행
   setTimeout(function(){
-    clearInterval(_iframeUnlockTimer);
-    if(!window._appMounted){ unlock(); }
-  }, 10000);
+    if(!_iframeUnlockDone){_iframeUnlockDone=true;unlock();}
+  },12000);
 }
 
 // 캐시 복원
