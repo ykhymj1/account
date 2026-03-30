@@ -266,20 +266,36 @@ function portfolioInit() {
     });
 }
 portfolioInit();
-// iframe 모드: Babel JSX 파싱 완료 후 잠금 없이 바로 실행
+// ★★★ iframe 모드: Babel JSX 파싱 완료를 안전하게 감지하여 잠금 없이 실행
+// [버그수정] requestAnimationFrame만으로는 Babel 비동기 파싱을 놓칠 수 있음
+// → setInterval 폴링 + rAF 병행으로 확실히 감지
 if(window.self!==window.top){
-  // __mountApp이 정의될 때까지 폴링 (Babel 파싱 대기)
-  var _iframeUnlockTimer = setInterval(function(){
-    if(typeof window.__mountApp === "function"){
-      clearInterval(_iframeUnlockTimer);
-      unlock();
-    }
-  }, 50);
-  // 최대 10초 안에 실행 안 되면 강제 실행
+  var _iframeUnlockDone=false;
+  function _doIframeUnlock(){
+    if(_iframeUnlockDone)return;
+    _iframeUnlockDone=true;
+    clearInterval(_iframeUnlockInterval);
+    unlock();
+  }
+  // ★ 100ms 간격으로 __mountApp 정의 여부 폴링 (Babel 파싱 완료 감지)
+  var _iframeUnlockInterval=setInterval(function(){
+    if(typeof window.__mountApp==="function") _doIframeUnlock();
+  },100);
+  // ★ rAF도 병행 (빠른 환경 대응)
+  function _scheduleUnlock(){
+    if(_iframeUnlockDone)return;
+    if(typeof window.__mountApp==="function"){_doIframeUnlock();return;}
+    requestAnimationFrame(_scheduleUnlock);
+  }
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",function(){requestAnimationFrame(_scheduleUnlock);});
+  }else{
+    requestAnimationFrame(_scheduleUnlock);
+  }
+  // ★ 안전망: 15초 내 미실행 시 강제 실행 (이전 12초에서 연장)
   setTimeout(function(){
-    clearInterval(_iframeUnlockTimer);
-    if(!window._appMounted){ unlock(); }
-  }, 10000);
+    if(!_iframeUnlockDone){_iframeUnlockDone=true;clearInterval(_iframeUnlockInterval);unlock();}
+  },15000);
 }
 
 // 캐시 복원
@@ -688,7 +704,7 @@ function GraphView({allAccounts,myTotal,myPnl,myPct,history}){
   return(
     <div style={{padding:"16px 16px 8px"}}>
       {/* 타겟 선택 */}
-      <div style={{display:"flex",overflowX:"auto",gap:6,marginBottom:12,paddingBottom:2}}>
+      <div data-horizontal-scroll="1" data-no-swipe="1" style={{display:"flex",overflowX:"auto",gap:6,marginBottom:12,paddingBottom:2,touchAction:"pan-x"}}>
         {[{id:"total",icon:"📊",label:"총자산",color:"#60a5fa"},...ACCOUNTS.map(ac=>({id:ac.id,icon:ac.icon,label:ac.short,color:ac.color}))].map(item=>(
           <button key={item.id} onClick={()=>setTarget(item.id)} style={{flexShrink:0,padding:"6px 11px",borderRadius:20,fontSize:12,fontWeight:700,
             border:`1px solid ${target===item.id?item.color:"#1e3250"}`,
@@ -1037,12 +1053,49 @@ const SettingsModal=memo(function SettingsModal({show,fxRate,fxAuto,fxTime,fxSou
 /* ════════════════════════════════
    메인 앱
 ════════════════════════════════ */
+/* ★ USD 종목 카드 우측 표시 컴포넌트 */
+function StockUsdDisplay({h, C, won, usd, pf, ProfitBadge}){
+  const qty=parseFloat(h.qty)||0;
+  const curUsdTotal=h.cur*qty;
+  const avgUsdTotal=h.avg*qty;
+  const pnlUsd=curUsdTotal-avgUsdTotal;
+  const pnlCol=h.pct>=0?C.up:C.dn;
+  return(<>
+    <div style={{fontSize:12,fontWeight:700,color:C.sub}}>{usd(curUsdTotal)}</div>
+    <div style={{fontSize:11,fontWeight:600,color:pnlCol}}>{pnlUsd>=0?"+":""}{usd(pnlUsd)} ({pf(h.pct)})</div>
+    <div style={{fontSize:15,fontWeight:800,color:C.text,marginTop:2}}>{won(h.current)}</div>
+    <ProfitBadge pct={h.pct} pnl={h.pnl} size="sm"/>
+  </>);
+}
+
+/* ★ 계좌 헤더 우측 USD 총액 컴포넌트 */
+function AcctHeaderUsd({curData, C, won, usd, pf, ProfitBadge}){
+  const usdList=(curData.list||[]).filter(h=>h.currency==="USD");
+  if(usdList.length>0){
+    const usdCur=usdList.reduce((s,h)=>s+(h.cur*(parseFloat(h.qty)||0)),0);
+    const usdInv=usdList.reduce((s,h)=>s+(h.avg*(parseFloat(h.qty)||0)),0);
+    const usdPnl=usdCur-usdInv;
+    const usdPct=usdInv>0?usdPnl/usdInv*100:0;
+    const pnlCol=usdPct>=0?C.up:C.dn;
+    return(<div>
+      <div style={{fontSize:13,fontWeight:700,color:C.sub}}>{usd(usdCur)}</div>
+      <div style={{fontSize:11,fontWeight:600,color:pnlCol,marginBottom:2}}>{usdPnl>=0?"+":""}{usd(usdPnl)} ({pf(usdPct)})</div>
+      <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
+      <ProfitBadge pct={curData.pct} pnl={curData.pnl}/>
+    </div>);
+  }
+  return(<div>
+    <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
+    <ProfitBadge pct={curData.pct} pnl={curData.pnl}/>
+  </div>);
+}
+
 function App(){
   const saved=useMemo(()=>ld(SK,{holdings:{},fxRate:DEFAULT_FX}),[]);
   const[tab,setTab]=useState("dash");
   const[acctTab,setAcctTab]=useState("amt");
   // 계좌 탭 전환 시 종목편집 모드 리셋
-  const switchAcctTab=useCallback((id)=>{setAcctTab(id);setEditingItemOrder(false);},[setEditingItemOrder]);
+  const switchAcctTab=useCallback((id)=>{setAcctTab(id);setEditingItemOrder(false);},[]);
   const[holdings,setHoldings]=useState(()=>saved.holdings||{});
   // ★ 환율: 프리페치 캐시 → localStorage 저장값 → 기본값 순서로 복원
   const[fxRate,setFxRate]=useState(()=>{
@@ -1091,7 +1144,6 @@ function App(){
   const[editingAcctOrder,setEditingAcctOrder]=useState(false);
   // ★ 종목 순서 편집 모드 (계좌별)
   const[editingItemOrder,setEditingItemOrder]=useState(false);
-  const[pullRefreshing,setPullRefreshing]=useState(false);
   const holdingsRef=useRef(holdings);
   useEffect(()=>{holdingsRef.current=holdings;},[holdings]);
   // ★ fxRateRef: 환율을 ref로도 유지 → fetchPrices 내 클로저에서 최신값 즉시 사용
@@ -1100,12 +1152,22 @@ function App(){
   const fileRef=useRef(null);
   const cmaReturnContext=useRef({active:false,accountId:"",action:""});
   const navStateRef=useRef({tab:"dash",acctTab:"amt"});
+  const fetchCycleRef=useRef(0);
+  const summaryTimerRef=useRef(null);
+  const summaryPayloadRef=useRef(null);
+  const historyDaySigRef=useRef('');
+  const ignoreGestureRef=useRef(false);
 
   useEffect(()=>{navStateRef.current={tab,acctTab};},[tab,acctTab]);
 
   // ★ React 마운트 완료 → 부모에 IFRAME_READY 신호 발송 (UID 즉시 요청용)
+  // ★★ [버그수정] 한 번만 발송하면 부모가 놓칠 수 있어 300ms 간격으로 3회 재시도
   useEffect(()=>{
-    try{window.parent.postMessage({type:'IFRAME_READY'},'*');}catch(e){}
+    const send=()=>{try{window.parent.postMessage({type:'IFRAME_READY'},'*');}catch(e){}};
+    send();
+    const t1=setTimeout(send,300);
+    const t2=setTimeout(send,800);
+    return()=>{clearTimeout(t1);clearTimeout(t2);};
   },[]);
 
   const goBackFromCmaContext=useCallback(()=>{
@@ -1120,56 +1182,88 @@ function App(){
   const touchStartX=useRef(0);
   const touchStartY=useRef(0);
   const handleTouchStart=useCallback((e)=>{
+    const target=e.target;
+    ignoreGestureRef.current=!!(target&&target.closest&&(target.closest('button,input,select,textarea,label,a,[data-no-swipe="1"],[data-horizontal-scroll="1"]')));
     touchStartX.current=e.touches[0].clientX;
     touchStartY.current=e.touches[0].clientY;
   },[]);
-  // ★ 좌측 스와이프(뒤로가기) 브라우저 제스처 방지
-  const handleTouchMove=useCallback((e)=>{
-    const dx=touchStartX.current-e.touches[0].clientX;
-    const dy=touchStartY.current-e.touches[0].clientY;
-    const curAcctInfo=ACCOUNTS.find(a=>a.id===acctTab);
-    const isCmaBackContext=tab==="accounts"&&curAcctInfo?.cmaType&&cmaReturnContext.current?.active;
-    // 브라우저 뒤로가기 제스처 방지 + CMA 상세 좌우 스와이프 커스텀 뒤로가기
-    if((dx<-30&&Math.abs(dx)>Math.abs(dy)*1.5)||(isCmaBackContext&&Math.abs(dx)>30&&Math.abs(dx)>Math.abs(dy)*1.2)){
-      e.preventDefault();
-    }
-  },[tab,acctTab]);
+  // ★ [freezing 수정] onTouchMove 제거 → useEffect에서 passive:false로 직접 등록
+  // React 18은 onTouchMove를 document에 passive:true로 등록하여 e.preventDefault()가 무시됨
+  // → 브라우저와 충돌로 freezing 발생. addEventListener에서 passive:false로 직접 등록해야 함
+  const tabRef=useRef(tab);
+  const acctTabRef=useRef(acctTab);
+  useEffect(()=>{tabRef.current=tab;},[tab]);
+  useEffect(()=>{acctTabRef.current=acctTab;},[acctTab]);
+
+  useEffect(()=>{
+    const el=document.getElementById('mainScroll');
+    if(!el)return;
+    const EDGE_SWIPE_PX=24;
+    const onMove=(e)=>{
+      if(ignoreGestureRef.current||!e.touches||e.touches.length!==1)return;
+      const dx=touchStartX.current-e.touches[0].clientX;
+      const dy=touchStartY.current-e.touches[0].clientY;
+      const curAcctInfo=ACCOUNTS.find(a=>a.id===acctTabRef.current);
+      const isCmaBackContext=tabRef.current==="accounts"&&curAcctInfo?.cmaType&&cmaReturnContext.current?.active;
+      const vw=window.innerWidth||390;
+      const startedNearEdge=touchStartX.current<=EDGE_SWIPE_PX||touchStartX.current>=vw-EDGE_SWIPE_PX;
+      if(!startedNearEdge&&!isCmaBackContext)return;
+      if((dx<-48&&Math.abs(dx)>Math.abs(dy)*1.8)||(isCmaBackContext&&Math.abs(dx)>72&&Math.abs(dx)>Math.abs(dy)*1.4)){
+        e.preventDefault();
+      }
+    };
+    el.addEventListener('touchmove',onMove,{passive:false});
+    return()=>el.removeEventListener('touchmove',onMove);
+  },[]);// eslint-disable-line
+
+  const[pullRefreshing,setPullRefreshing]=useState(false);
+  // ★ [freezing 수정] pullRefreshing/fetchPrices/fetching 모두 ref로 관리
+  // → handleTouchEnd가 절대 재생성되지 않아 touchmove 충돌·freezing 완전 방지
+  const pullRefreshingRef=useRef(false);
+  const fetchPricesRef=useRef(null);
+  const fetchingRef=useRef(false); // ★ fetching을 ref로도 유지
+  useEffect(()=>{pullRefreshingRef.current=pullRefreshing;},[pullRefreshing]);
+
   // ★ CMA 계좌 상세: 아래로 당기면 홈으로 복귀 / 그 외 탭은 새로고침
+  // ★★ deps에서 fetching 제거 → [] 고정으로 함수 재생성 완전 차단 (freezing 핵심 수정)
   const handleTouchEnd=useCallback((e)=>{
+    if(ignoreGestureRef.current){ignoreGestureRef.current=false;return;}
     const endY=e.changedTouches[0].clientY;
     const endX=e.changedTouches[0].clientX;
-    const diffY=endY-touchStartY.current; // 양수=아래로 당김
+    const diffY=endY-touchStartY.current;
     const rawDx=endX-touchStartX.current;
     const diffX=Math.abs(rawDx);
-    const curAcctInfo=ACCOUNTS.find(a=>a.id===acctTab);
+    const curAcctInfo=ACCOUNTS.find(a=>a.id===acctTabRef.current);
     const mainScroll=document.getElementById('mainScroll');
     const scrollTop=mainScroll?mainScroll.scrollTop:window.scrollY;
+    const vw=window.innerWidth||390;
+    const startedNearEdge=touchStartX.current<=24||touchStartX.current>=vw-24;
 
-    // CMA 상세에서 좌우 스와이프로 이전 화면 복귀
-    if(tab==="accounts"&&curAcctInfo?.cmaType&&cmaReturnContext.current?.active&&diffX>80&&diffX>Math.abs(diffY)*1.2){
+    if(tabRef.current==="accounts"&&curAcctInfo?.cmaType&&cmaReturnContext.current?.active&&diffX>80&&diffX>Math.abs(diffY)*1.2){
       if(goBackFromCmaContext())return;
     }
-
     if(diffY>90&&scrollTop<=0&&diffX<80){
-      if(tab==="accounts"&&curAcctInfo?.cmaType){
+      if(tabRef.current==="accounts"&&curAcctInfo?.cmaType){
         if(goBackFromCmaContext())return;
         try{window.parent.postMessage({type:'GO_HOME'},'*');}catch(err){}
         return;
       }
-      if(!fetching&&!pullRefreshing){
+      // ★ fetching은 ref로 체크 → 함수 재생성 불필요
+      if(!fetchingRef.current&&!pullRefreshingRef.current&&fetchPricesRef.current){
         setPullRefreshing(true);
-        fetchPrices(holdingsRef.current).finally(()=>setPullRefreshing(false));
+        pullRefreshingRef.current=true;
+        fetchPricesRef.current(holdingsRef.current).finally(()=>{setPullRefreshing(false);pullRefreshingRef.current=false;});
       }
       return;
     }
-    // 탭 스와이프: 수평 80px+ AND 수평>수직×2
+    if(!startedNearEdge)return;
     const dx=touchStartX.current-endX;
     if(Math.abs(dx)<80||Math.abs(dx)<Math.abs(diffY)*2)return;
-    if(tab==="accounts")return;
-    const idx=TABS.indexOf(tab);
+    if(tabRef.current==="accounts")return;
+    const idx=TABS.indexOf(tabRef.current);
     if(dx>0&&idx<TABS.length-1)setTab(TABS[idx+1]);
     else if(dx<0&&idx>0)setTab(TABS[idx-1]);
-  },[tab,acctTab,fetching,pullRefreshing,fetchPrices,goBackFromCmaContext]);
+  },[goBackFromCmaContext]); // ★ fetching 제거 — fetchingRef로 대체
 
   useEffect(()=>{sv(SK,{holdings,fxRate});},[holdings,fxRate]);
 
@@ -1183,11 +1277,23 @@ function App(){
       const hist=ld(SK_HISTORY,{});
       const snap={total:{invested:myTotal.invested,current:myTotal.current}};
       allAccounts.forEach(ac=>{const r=ac.shared ? 0.5 : 1;snap[ac.id]={invested:ac.invested*r,current:ac.current*r};});
+      const sig=JSON.stringify(snap);
+      if(historyDaySigRef.current===sig)return;
+      const prevSig=hist[today]?JSON.stringify(hist[today]):'';
+      if(prevSig===sig){
+        historyDaySigRef.current=sig;
+        return;
+      }
+      historyDaySigRef.current=sig;
       hist[today]=snap;
       const keys=Object.keys(hist).sort();
       if(keys.length>366)keys.slice(0,keys.length-366).forEach(k=>delete hist[k]);
       sv(SK_HISTORY,hist);
-      setHistory({...hist});
+      setHistory(prev=>{
+        const curSig=prev[today]?JSON.stringify(prev[today]):'';
+        if(curSig===sig&&Object.keys(prev).length===Object.keys(hist).length)return prev;
+        return {...hist};
+      });
     }catch(e){}
   },[allAccounts,myTotal,prices]); // ★ prices 변경시도 저장 (갱신 즉시 그래프 반영)
 
@@ -1213,67 +1319,79 @@ function App(){
       });
     });
     const dayPct=dayBase>0?dayPnl/dayBase*100:0;
-    try{
-      window.parent.postMessage({
-        type:'STOCK_SUMMARY',
-        total:myTotal.current,
-        personalTotal:myTotal.current,
-        grossTotal,
-        stockOnly,
-        stockGrossTotal,
-        mySixAcctTotal,
-        invested:myTotal.invested,
-        pnl:myPnl,
-        pct:myPct,
-        cmaTotal,
-        cmaPnl,
-        cmaDetails:cmaAccts.map(ac=>({
-          id:ac.id,
-          label:ac.label,
-          icon:ac.icon,
-          color:ac.color,
-          shared:ac.shared,
-          principal:(ac.list||[]).reduce((s,h)=>s+(parseFloat(h.principal)||0),0),
-          current:ac.current,
-          pnl:ac.pnl,
-          pct:ac.pct,
-          totalInterest:ac.totalInterest||0,
-          rate:(ac.list||[])[0]?.rate||0,
-          days:(ac.list||[])[0]?.days||0,
-          dailyInterest:(ac.list||[]).reduce((s,h)=>s+(h.dailyInterest||0),0),
-          items:(ac.list||[]).map((h,idx)=>({
-            idx,
-            name:h.name,
-            principal:parseFloat(h.principal)||0,
-            current:h.current||0,
-            yearInterest:h.yearInterest??h.pnl??0,
-            totalInterest:h.totalInterest||0,
-            dailyInterest:h.dailyInterest||0,
-            rate:parseFloat(h.rate)||0,
-            startDate:h.startDate||'',
-            days:h.days||0,
-            memo:h.memo||''
-          }))
-        })),
-        dayPnl,
-        dayPct,
-        fxRate,
-        fxAuto,
-        fxTime,
-        accts
-      },'*');
-    }catch(e){}
+    summaryPayloadRef.current={
+      type:'STOCK_SUMMARY',
+      total:myTotal.current,
+      personalTotal:myTotal.current,
+      grossTotal,
+      stockOnly,
+      stockGrossTotal,
+      mySixAcctTotal,
+      invested:myTotal.invested,
+      pnl:myPnl,
+      pct:myPct,
+      cmaTotal,
+      cmaPnl,
+      cmaDetails:cmaAccts.map(ac=>({
+        id:ac.id,
+        label:ac.label,
+        icon:ac.icon,
+        color:ac.color,
+        shared:ac.shared,
+        principal:(ac.list||[]).reduce((s,h)=>s+(parseFloat(h.principal)||0),0),
+        current:ac.current,
+        pnl:ac.pnl,
+        pct:ac.pct,
+        totalInterest:ac.totalInterest||0,
+        rate:(ac.list||[])[0]?.rate||0,
+        days:(ac.list||[])[0]?.days||0,
+        dailyInterest:(ac.list||[]).reduce((s,h)=>s+(h.dailyInterest||0),0),
+        items:(ac.list||[]).map((h,idx)=>({
+          idx,
+          name:h.name,
+          principal:parseFloat(h.principal)||0,
+          current:h.current||0,
+          yearInterest:h.yearInterest??h.pnl??0,
+          totalInterest:h.totalInterest||0,
+          dailyInterest:h.dailyInterest||0,
+          rate:parseFloat(h.rate)||0,
+          startDate:h.startDate||'',
+          days:h.days||0,
+          memo:h.memo||''
+        }))
+      })),
+      dayPnl,
+      dayPct,
+      fxRate,
+      fxAuto,
+      fxTime,
+      accts
+    };
+    if(summaryTimerRef.current)return;
+    summaryTimerRef.current=setTimeout(()=>{
+      const payload=summaryPayloadRef.current;
+      summaryTimerRef.current=null;
+      if(!payload)return;
+      try{window.parent.postMessage(payload,'*');}catch(e){}
+    },120);
   },[myTotal,myPnl,myPct,allAccounts,fxRate,fxAuto,fxTime]);
+  useEffect(()=>()=>{if(summaryTimerRef.current)clearTimeout(summaryTimerRef.current);},[]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),2800);return()=>clearTimeout(t);},[toast]);
 
   // ★ 안드로이드 뒤로가기/좌측스와이프 앱종료 방지
+  // ★★ [버그수정] iframe 내부에서는 history.pushState 호출 안 함 → 부모 페이지 URL 충돌 방지
   useEffect(()=>{
-    if(!window.__pfHistoryPrimed){
-      window.history.pushState({page:"app"},"",window.location.href);
-      window.__pfHistoryPrimed=true;
+    const isIframe=window.self!==window.top;
+    if(!isIframe){
+      if(!window.__pfHistoryPrimed){
+        window.history.pushState({page:"app"},"",window.location.href);
+        window.__pfHistoryPrimed=true;
+      }
     }
     const onPop=()=>{
-      window.history.pushState({page:"app"},"",window.location.href);
+      if(!isIframe){
+        window.history.pushState({page:"app"},"",window.location.href);
+      }
       const currentTab=navStateRef.current.tab;
       const currentAcct=navStateRef.current.acctTab;
       const currentAcctInfo=ACCOUNTS.find(a=>a.id===currentAcct);
@@ -1359,29 +1477,32 @@ function App(){
 
   /* ★ 시세 조회 v6 - Promise.race 병렬 우선 + 순차 폴백 */
   const fetchPrices=useCallback(async(hMap)=>{
-    setFetching(true);
+    const cycleId=++fetchCycleRef.current;
+    setFetching(true);fetchingRef.current=true; // ★ ref 동기화
 
-    // 1. 고유 티커 수집 (중복 제거)
-    const tickerMap={};
-    Object.entries(hMap).forEach(([aid,list])=>{
-      const ac=ACCOUNTS.find(a=>a.id===aid);
-      if(ac?.cmaType)return;
-      (list||[]).forEach(h=>{
-        if(!h.ticker||!AUTO_TYPES.includes(h.assetType))return;
-        const tk=(h.assetType==="국내ETF"||h.assetType==="국내주식")?h.ticker+".KS":h.ticker;
-        tickerMap[tk]=h.assetType;
+    try{
+      // 1. 고유 티커 수집 (중복 제거)
+      const tickerMap={};
+      Object.entries(hMap).forEach(([aid,list])=>{
+        const ac=ACCOUNTS.find(a=>a.id===aid);
+        if(ac?.cmaType)return;
+        (list||[]).forEach(h=>{
+          if(!h.ticker||!AUTO_TYPES.includes(h.assetType))return;
+          const tk=(h.assetType==="국내ETF"||h.assetType==="국내주식")?h.ticker+".KS":h.ticker;
+          tickerMap[tk]=h.assetType;
+        });
       });
-    });
-    const allTickers=Object.keys(tickerMap);
+      const allTickers=Object.keys(tickerMap);
 
-    // 종목 없으면 종료
-    if(allTickers.length===0){
-      setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
-      setCountdown(600);setFetching(false);return;
-    }
+      // 종목 없으면 종료
+      if(allTickers.length===0){
+        setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
+        setCountdown(600);
+        return;
+      }
 
-    // 4. ★★ 단일 티커 조회: 최대한 많은 루트로 병렬 시도 (성공률 극대화)
-    const fetchOneTicker=async(tk)=>{
+      // 4. ★★ 단일 티커 조회: 최대한 많은 루트로 병렬 시도 (성공률 극대화)
+      const fetchOneTicker=async(tk)=>{
       const now=()=>new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
       const yUrl1="https://query1.finance.yahoo.com/v8/finance/chart/"+tk+"?interval=1d&range=1d";
       const yUrl2="https://query2.finance.yahoo.com/v8/finance/chart/"+tk+"?interval=1d&range=1d";
@@ -1474,23 +1595,37 @@ function App(){
       }
     };
 
-    // 5. ★★ 모든 종목 완전 병렬 실행 (배치 제거 - 빠른 결과부터 즉시 화면 반영)
-    await Promise.allSettled(allTickers.map(async(tk)=>{
-      const result=await fetchOneTicker(tk);
-      if(result){
+      // 5. ★★ 모든 종목 완전 병렬 실행 → 결과는 1회 배치 반영 (렌더 폭주/프리징 방지)
+      const settled=await Promise.allSettled(allTickers.map(async(tk)=>({tk,result:await fetchOneTicker(tk)})));
+      if(fetchCycleRef.current!==cycleId)return;
+
+      const merged={};
+      settled.forEach(item=>{
+        if(item.status==='fulfilled'&&item.value&&item.value.result){
+          merged[item.value.tk]=item.value.result;
+        }
+      });
+      if(Object.keys(merged).length){
         setPrices(prev=>{
-          const next={...prev,[tk]:result};
+          const next={...prev,...merged};
           sv(SK_PRICES,next);
           return next;
         });
       }
-    }));
 
-    setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
-    const d2=new Date(),h2=d2.getHours(),day2=d2.getDay();
-    setCountdown((day2>0&&day2<6&&h2>=9&&h2<16)?180:600);
-    setFetching(false);
+      setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
+      const d2=new Date(),h2=d2.getHours(),day2=d2.getDay();
+      setCountdown((day2>0&&day2<6&&h2>=9&&h2<16)?180:600);
+    }finally{
+      if(fetchCycleRef.current===cycleId){
+        setFetching(false);
+        fetchingRef.current=false; // ★ ref 동기화
+      }
+    }
   },[fetchFxRate]);
+
+  // ★ [freezing 수정] fetchPricesRef를 fetchPrices 정의 직후 동기화
+  useEffect(()=>{fetchPricesRef.current=fetchPrices;},[fetchPrices]);
 
   // ★ 초기 로딩 + 스마트 환율/시세 자동갱신
   // eslint-disable-next-line
@@ -1511,26 +1646,20 @@ function App(){
     if(day>0&&day<6&&h>=9&&h<16)return 180;
     return 600;
   };
-  // ★ countdown: ref로 관리해 매초 리렌더 방지
-  const countdownRef=useRef(countdown);
-  useEffect(()=>{
-    countdownRef.current=countdown;
-  },[countdown]);
+  // ★ [freezing 수정] countdown을 ref로도 관리 → setInterval이 fetchPrices에 의존하지 않게 분리
+  const countdownRef=useRef(getRefreshInterval());
+  useEffect(()=>{countdownRef.current=countdown;},[countdown]);
   useEffect(()=>{
     const t=setInterval(()=>{
-      const next=countdownRef.current-1;
-      if(next<=0){
+      countdownRef.current=countdownRef.current-1;
+      if(countdownRef.current<=0){
         countdownRef.current=getRefreshInterval();
-        setCountdown(getRefreshInterval());
-        fetchPrices(holdingsRef.current);
-      }else{
-        countdownRef.current=next;
-        // 10초마다만 state 업데이트 (렌더 최소화)
-        if(next%10===0||next<=5){setCountdown(next);}
+        if(fetchPricesRef.current)fetchPricesRef.current(holdingsRef.current);
       }
+      setCountdown(countdownRef.current);
     },1000);
     return()=>clearInterval(t);
-  },[fetchPrices]);
+  },[]);// eslint-disable-line
 
   /* 수익 계산 */
   const calcH=useCallback((h,aid,snap,fx)=>{
@@ -1549,8 +1678,7 @@ function App(){
     const dayChg=pInfo?(pInfo.price-pInfo.prev)/pInfo.prev*100:null;
     const isAuto=AUTO_TYPES.includes(h.assetType)&&!!h.ticker;
     return{...h,qty,avg,cur,curKRW:ck,avgKRW:ak,invested:inv,current:curr,pnl,pct:p,pInfo,dayChg,isAuto,calcMode:isAuto?"auto":"manual"};
-  // eslint-disable-next-line
-  },[prices]);  // fxRate는 fxRateRef로 접근해 deps 제거
+  },[prices,fxRate]);
 
   const calcAcct=useCallback((aid)=>{
     const list=(holdings[aid]||[]).map(h=>calcH(h,aid,prices,fxRate));
@@ -1680,7 +1808,9 @@ function App(){
   },[]);
 
   const openEdit=useCallback((aid,idx)=>{
-    const h=holdings[aid][idx];
+    const list=holdings[aid]||[];
+    const h=list[idx];
+    if(!h){showToast("종목 정보를 찾지 못했어요. 다시 시도해주세요.","error");return;}
     setForm({...h,_acctId:aid});
     setEditIdx(idx);
     setModal("holding");
@@ -1688,7 +1818,7 @@ function App(){
     if(h.ticker&&AUTO_TYPES.includes(h.assetType)){
       fetchSingleTicker(h.ticker,h.assetType);
     }
-  },[holdings,fetchSingleTicker]);
+  },[holdings,fetchSingleTicker,showToast]);
   const saveHolding=useCallback(()=>{
     if(!form.name?.trim()){showToast("종목명을 입력해주세요.","error");return;}
     const aid=form._acctId,ac=ACCOUNTS.find(a=>a.id===aid);
@@ -1749,9 +1879,16 @@ function App(){
 
   useEffect(()=>{
     const onParentMessage=(e)=>{
-      if(window.parent&&e.source!==window.parent)return;
+      // ★★ [버그수정] iframe 내에서 부모 메시지만 허용
+      // window.parent가 없으면(직접 접속) 모든 메시지 허용
+      if(window.self!==window.top&&window.parent&&e.source!==window.parent)return;
       const d=e.data||{};
       if(!d||typeof d!=="object")return;
+      // ★ FB_UID 메시지 수신 (Firebase 로그인 동기화)
+      if(d.type==="FB_UID"){
+        // stock.html 자체 Firebase는 onAuthStateChanged로 처리되므로 여기선 무시
+        return;
+      }
       if(d.type==="OPEN_CMA_ACCOUNT"){
         cmaReturnContext.current={active:true,accountId:d.accountId||"mycma",action:d.type};
         setTab("accounts");
@@ -1818,11 +1955,12 @@ function App(){
     if(h.calcMode==="fund")return[["보유좌수",nf(h.qty)],["기준가",`${nf(parseFloat(h.nav||0).toFixed(2))}원`],["수익금",`${h.pnl>0?"+":""}${won(h.pnl)}`]];
     // ★ 미국주식/ETF: 달러+원화 동시
     if(h.currency==="USD"){
-      const _pnlU=h.pnl/(fxRate||DEFAULT_FX);
+      const qty=parseFloat(h.qty)||0;
+      const pnlUsd=(h.cur-h.avg)*qty;
       return[
         ["평균단가",`${usd(h.avg)}\n${won(h.avgKRW)}`],
         ["현재가",`${usd(h.cur)}\n${won(h.curKRW)}`],
-        ["수익금",`${_pnlU>=0?"+":""}${usd(_pnlU)}\n${h.pnl>=0?"+":""}${won(h.pnl)}`]
+        ["수익금",`${pnlUsd>=0?"+":""}${usd(pnlUsd)}\n${h.pnl>0?"+":""}${won(h.pnl)}`]
       ];
     }
     return[["평균단가",won(h.avg)],["현재가",won(h.cur)],["수익금",`${h.pnl>0?"+":""}${won(h.pnl)}`]];
@@ -1834,9 +1972,8 @@ function App(){
   return(
     <div
       id="mainScroll"
-      style={{minHeight:"100vh",background:C.bg,color:C.text,paddingBottom:80,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",overscrollBehaviorX:"contain"}}
+      style={{minHeight:"100vh",background:C.bg,color:C.text,paddingBottom:80,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",overscrollBehaviorX:"contain",touchAction:"pan-y"}}
       onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       <Toast msg={toast?.msg} type={toast?.type}/>
@@ -1906,7 +2043,7 @@ function App(){
         {/* 자동갱신 바 */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
           <div style={{flex:1,height:3,background:"#e5e7eb",borderRadius:2,overflow:"hidden"}}>
-            <div style={{height:"100%",background:C.accent,width:`${Math.min(100,(countdown/Math.max(countdown,180))*100)}%`,transition:"width 1s linear",borderRadius:2}}/>
+            <div style={{height:"100%",background:C.accent,width:`${(countdown/getRefreshInterval())*100}%`,transition:"width 1s linear",borderRadius:2}}/>
           </div>
           <span style={{fontSize:11,color:C.muted,whiteSpace:"nowrap"}}>{fetching?"⏳ 갱신중...":`🔄 ${mins}:${secs}`}</span>
           <button onClick={()=>fetchPrices(holdingsRef.current)} style={{minHeight:36,padding:"0 12px",background:"none",border:`1px solid ${C.border}`,borderRadius:8,color:C.accent,fontSize:12}}>지금</button>
@@ -2015,7 +2152,7 @@ function App(){
       {/* 계좌별 */}
       {tab==="accounts"&&(
         <div>
-          <div style={{display:"flex",overflowX:"auto",gap:8,padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+          <div data-horizontal-scroll="1" data-no-swipe="1" style={{display:"flex",overflowX:"auto",gap:8,padding:"12px 16px",borderBottom:`1px solid ${C.border}`,touchAction:"pan-x"}}>
             {ACCOUNTS.map(ac=>(<button key={ac.id} onClick={()=>switchAcctTab(ac.id)} style={{flexShrink:0,minHeight:40,padding:"0 16px",borderRadius:20,fontSize:13,fontWeight:700,whiteSpace:"nowrap",border:`1px solid ${acctTab===ac.id?ac.color:C.border}`,background:acctTab===ac.id?ac.color+"22":"transparent",color:acctTab===ac.id?ac.color:C.muted}}>
               {ac.icon} {ac.short}
             </button>))}
@@ -2041,28 +2178,15 @@ function App(){
                   )}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
-                  {(()=>{
-                    const _ul=(curData.list||[]).filter(x=>x.currency==="USD");
-                    const _uc=_ul.reduce((s,x)=>s+(x.cur||0)*(parseFloat(x.qty)||0),0);
-                    const _ui=_ul.reduce((s,x)=>s+(x.avg||0)*(parseFloat(x.qty)||0),0);
-                    const _up=_uc-_ui,_upct=_ui>0?_up/_ui*100:0;
-                    const _ucol=_up>=0?C.up:C.dn,_r=curAcct.shared?0.5:1,_hu=_ul.length>0;
-                    if(curAcct.shared) return(
-                      <div>
-                        <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
-                        <div style={{fontSize:11,marginTop:1}}>{curAcct.cmaType?<><span style={{color:C.text}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(curData.current*0.5)}</span></>:`내 평가금액 ${won(curData.current*0.5)}`}</div>
-                        {_hu&&<div style={{fontSize:12,fontWeight:700,color:"#60a5fa",marginTop:3}}>{usd(_uc*_r)} <span style={{fontSize:11,color:_ucol}}>{_upct>=0?"▲":"▼"}{Math.abs(_upct).toFixed(2)}% {_up>=0?"+":""}{usd(_up*_r)}</span></div>}
-                        <div style={{marginTop:4}}><ProfitBadge pct={curData.pct} pnl={curData.pnl}/></div>
-                      </div>
-                    );
-                    return(
-                      <div>
-                        {_hu&&<div style={{fontSize:13,fontWeight:700,color:"#60a5fa",marginBottom:2}}>{usd(_uc)} <span style={{fontSize:11,color:_ucol}}>{_upct>=0?"▲":"▼"}{Math.abs(_upct).toFixed(2)}% {_up>=0?"+":""}{usd(_up)}</span></div>}
-                        <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
-                        <ProfitBadge pct={curData.pct} pnl={curData.pnl}/>
-                      </div>
-                    );
-                  })()}
+                  {curAcct.shared?(
+                    <div>
+                      <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
+                      <div style={{fontSize:11,marginTop:1}}>{curAcct.cmaType?<><span style={{color:C.text}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(curData.current*0.5)}</span></>:`내 평가금액 ${won(curData.current*0.5)}`}</div>
+                      <div style={{marginTop:4}}><ProfitBadge pct={curData.pct} pnl={curData.pnl}/></div>
+                    </div>
+                  ):(
+                    <AcctHeaderUsd curData={curData} fxRate={fxRate} C={C} won={won} usd={usd} pf={pf} ProfitBadge={ProfitBadge}/>
+                  )}
                 </div>
               </div>
               <MiniBar pct={curData.pct}/>
@@ -2118,14 +2242,14 @@ function App(){
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     {/* ★ 미국주식/ETF: 달러+원화 동시 표시 */}
-                    {h.currency==="USD"?(<>
-                      <div style={{fontSize:13,fontWeight:700,color:"#60a5fa"}}>{usd((h.cur||0)*(parseFloat(h.qty)||0))}</div>
-                      <div style={{fontSize:11,fontWeight:700,color:h.pct>=0?C.up:C.dn,marginBottom:1}}>{h.pct>=0?"▲":"▼"}{Math.abs(h.pct||0).toFixed(2)}% {(h.pnl/(fxRate||DEFAULT_FX))>=0?"+":""}{usd(h.pnl/(fxRate||DEFAULT_FX))}</div>
-                      <div style={{fontSize:15,fontWeight:800,color:C.text}}>{won(h.current)}</div>
-                    </>):(
-                      <div style={{fontSize:15,fontWeight:800,color:C.text}}>{won(h.current)}</div>
+                    {h.currency==="USD"?(
+                      <StockUsdDisplay h={h} C={C} won={won} usd={usd} pf={pf} ProfitBadge={ProfitBadge}/>
+                    ):(
+                      <>
+                        <div style={{fontSize:15,fontWeight:800,color:C.text}}>{won(h.current)}</div>
+                        <ProfitBadge pct={h.pct} size="sm"/>
+                      </>
                     )}
-                    <ProfitBadge pct={h.pct} size="sm"/>
                   </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,padding:"12px 0",borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
@@ -2133,12 +2257,8 @@ function App(){
                     <div key={j} style={{textAlign:"center"}}>
                       <div style={{fontSize:11,color:C.muted,marginBottom:4}}>{l}</div>
                       {/* ★ 줄바꿈 처리 (달러\n원화) */}
-                      {String(v).includes("\n")?(<>
-                        {String(v).split("\n").map((line,li)=>{
-                          const _isp=(l==="수익금"||l==="이자");
-                          const _lc=_isp?(h.pnl>=0?C.up:C.dn):(li===0?C.muted:C.text);
-                          return <div key={li} style={{fontSize:li===0?11:12,fontWeight:_isp?700:(li===0?400:700),color:_lc}}>{line}</div>;
-                        })}
+                      {v.includes("\n")?(<>
+                        {v.split("\n").map((line,li)=><div key={li} style={{fontSize:li===0?11:12,fontWeight:li===0?400:700,color:li===0?C.muted:C.text}}>{line}</div>)}
                       </>):(
                         <div style={{fontSize:12,fontWeight:700,color:(l==="수익금"||l==="이자")?(h.pnl>=0?C.up:C.dn):l==="전일이자"?C.up:C.text}}>{v}</div>
                       )}

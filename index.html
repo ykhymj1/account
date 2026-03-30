@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<base href="https://ykhymj1.github.io/Total-stock/"/>
+<base href="https://ykhymj1.github.io/account/"/>
+<!-- ★ account 레포 배포 URL: https://ykhymj1.github.io/account/ -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -482,13 +483,15 @@ function getCmaItems(c){
   return (c&&c.items&&c.items.length)?c.items:[{idx:0,name:c.label,principal:c.principal,current:c.current,yearInterest:c.pnl,totalInterest:c.totalInterest,dailyInterest:c.dailyInterest,rate:c.rate,days:c.days,memo:''}];
 }
 function getCmaYearInterest(c){
+  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);
+    return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0)*sh;
   },0);
 }
 function getCmaDailyInterest(c){
+  var sh=getCmaShare(c);
   return getCmaItems(c).reduce(function(sum,item){
-    return sum+((item&&item.dailyInterest)||0);
+    return sum+((item&&item.dailyInterest)||0)*sh;
   },0);
 }
 function renderCmaCard(c){
@@ -647,6 +650,25 @@ function applySummaryToHome(d){
 /* ════ postMessage ════ */
 var _stockData=null;
 var _summaryReceived=false;
+var _summaryApplyTimer=null;
+var _latestSummary=null;
+function scheduleSummaryApply(d){
+  _latestSummary=d;
+  if(_summaryApplyTimer)return;
+  var flush=function(){
+    _summaryApplyTimer=null;
+    if(!_latestSummary)return;
+    var data=_latestSummary;
+    _latestSummary=null;
+    saveSummaryCache(data);
+    applySummaryToHome(data);
+  };
+  if(window.requestAnimationFrame){
+    _summaryApplyTimer=requestAnimationFrame(flush);
+  }else{
+    _summaryApplyTimer=setTimeout(flush,16);
+  }
+}
 window.addEventListener('message',function(e){
   var sf=document.getElementById('stockFrame');
   var fromStock=!!(sf&&e.source===sf.contentWindow);
@@ -659,17 +681,21 @@ window.addEventListener('message',function(e){
     return;
   }
   if(d.type==='IFRAME_READY'){
-    // iframe React 마운트 완료 신호 → UID 즉시 전달
+    // ★★ [버그수정] iframe React 마운트 완료 신호
+    // → UID 전달 + pending 메시지도 여기서 확실히 처리
     if(_fbUser&&sf&&sf.contentWindow){
       try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+    }
+    if(_pendingStockMessage&&sf&&sf.contentWindow){
+      var pm=_pendingStockMessage;_pendingStockMessage=null;
+      try{sf.contentWindow.postMessage(pm,'*');}catch(e){}
     }
     return;
   }
   if(d.type==='STOCK_SUMMARY'){
     _stockData=d;
     _summaryReceived=true;
-    saveSummaryCache(d); // ★ 캐시 저장
-    applySummaryToHome(d);
+    scheduleSummaryApply(d); // ★ DOM 업데이트 프레임 단위로 묶어 프리징 방지
   }
 });
 
@@ -772,14 +798,17 @@ var _stockFrameLoaded=false;
 function onStockFrameLoad(){
   _stockFrameLoaded=true;
   var sf=document.getElementById('stockFrame');
-  if(sf&&sf.contentWindow){
-    if(_fbUser){
-      try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
-    }
-    if(_pendingStockMessage){
-      try{sf.contentWindow.postMessage(_pendingStockMessage,'*');}catch(e){}
-      _pendingStockMessage=null;
-    }
+  if(!sf||!sf.contentWindow)return;
+  // ★ FB_UID 전달 — IFRAME_READY 신호 전까지는 대기하므로 여기서도 시도
+  if(_fbUser){
+    try{sf.contentWindow.postMessage({type:'FB_UID',uid:_fbUser.uid},'*');}catch(e){}
+  }
+  // ★ pending 메시지 재시도: IFRAME_READY 이후에 처리되도록 약간 지연
+  if(_pendingStockMessage){
+    var pm=_pendingStockMessage;_pendingStockMessage=null;
+    setTimeout(function(){
+      try{sf.contentWindow.postMessage(pm,'*');}catch(e){}
+    },200);
   }
 }
 function lockApp(){
@@ -826,6 +855,7 @@ _fbFallback=setTimeout(function(){
   startApp();
 })();
 </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
