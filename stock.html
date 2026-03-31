@@ -1857,6 +1857,14 @@ function App(){
       if(!d||typeof d!=="object")return;
       // FB_UID는 stock.html 자체 Firebase onAuthStateChanged가 처리하므로 무시
       if(d.type==="FB_UID")return;
+      // ★ 부모(index.html)가 백업 요청 → localStorage 데이터 응답
+      if(d.type==="REQUEST_BACKUP"){
+        const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
+        const data={};
+        keys.forEach(k=>{const v=localStorage.getItem(k);if(v)data[k]=v;});
+        try{window.parent.postMessage({type:"BACKUP_DATA",data},'*');}catch(err){}
+        return;
+      }
       if(d.type==="OPEN_CMA_ACCOUNT"){
         cmaReturnContext.current={active:true,accountId:d.accountId||"mycma",action:d.type};
         setTab("accounts");

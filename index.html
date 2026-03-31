@@ -677,6 +677,27 @@ window.addEventListener('message',function(e){
     _summaryReceived=true;
     saveSummaryCache(d); // ★ 캐시 저장
     applySummaryToHome(d);
+    // ★ STOCK_SUMMARY 수신 직후 자동 백업 요청 (로그인 상태일 때만)
+    if(_fbUser&&_fbDb){
+      var sf2=document.getElementById('stockFrame');
+      if(sf2&&sf2.contentWindow){
+        try{sf2.contentWindow.postMessage({type:'REQUEST_BACKUP'},'*');}catch(e){}
+      }
+    }
+  }
+  // ★ stock iframe이 보내온 localStorage 데이터 → Firebase에 저장
+  if(d.type==='BACKUP_DATA'){
+    if(!_fbUser||!_fbDb)return;
+    try{
+      var fb=window._fb,now=new Date().toISOString();
+      var sd={updatedAt:now};
+      STK_KEYS.forEach(function(k){if(d.data&&d.data[k])sd[k]=d.data[k];});
+      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),sd);
+      var id={updatedAt:now};
+      IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
+      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
+      showSyncToast('자동 백업 완료! ☁️');
+    }catch(e){console.warn('[auto-backup]',e);}
   }
 });
 
