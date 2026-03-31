@@ -310,11 +310,12 @@ function getFxCache() {
 window.__cache = { prices: getPricesCache(), fxCache: getFxCache() };
 </script>
 
-<!-- ★ Firebase 동기화 — Realtime Database 방식 -->
+<!-- ★ Firebase 동기화 — Google 로그인 자동처리 -->
 <script type="module">
-import { initializeApp }     from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
-import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
+import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider,
+         signInWithPopup, onAuthStateChanged }    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set, get }             from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const FB_CONFIG = {
   apiKey:            "AIzaSyD9A3cbUujY4agOwB0OL45ccsfRhBXETMw",
@@ -331,21 +332,35 @@ const auth = getAuth(app);
 const db   = getDatabase(app);
 
 const KEYS = ["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
-let _uid = null;
-let _timer = null;
+let _uid = null, _timer = null;
 
-function badge(msg) {
+function badge(msg, color) {
   let b = document.getElementById("_fsb");
   if (!b) {
     b = document.createElement("div");
     b.id = "_fsb";
-    b.style.cssText = "position:fixed;bottom:70px;right:12px;z-index:9999;background:#071a0e;border:1.5px solid #00ffcc;border-radius:20px;padding:7px 16px;font-size:12px;color:#00ffcc;font-weight:700;font-family:'DM Mono',monospace;pointer-events:none;opacity:0;transition:opacity .4s;";
+    b.style.cssText = "position:fixed;bottom:70px;right:12px;z-index:9999;border-radius:20px;padding:7px 16px;font-size:12px;font-weight:700;font-family:'DM Mono',monospace;pointer-events:none;opacity:0;transition:opacity .4s;";
     document.body.appendChild(b);
   }
+  b.style.background = color === 'err' ? '#3a0a0a' : '#071a0e';
+  b.style.border     = color === 'err' ? '1.5px solid #ff6b6b' : '1.5px solid #00ffcc';
+  b.style.color      = color === 'err' ? '#ff6b6b' : '#00ffcc';
   b.textContent = "☁️ " + msg;
   b.style.opacity = "1";
   clearTimeout(b._t);
   b._t = setTimeout(() => { b.style.opacity = "0"; }, 3000);
+}
+
+// Google 자동 로그인 (팝업)
+async function autoGoogleLogin() {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch(e) {
+    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+      badge('로그인 실패: ' + (e.code || e.message), 'err');
+    }
+  }
 }
 
 async function backup() {
@@ -355,9 +370,8 @@ async function backup() {
     KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
     await set(ref(db, "users/" + _uid + "/apps/stock"), data);
     badge("백업 완료 ✅");
-    console.log("[Stock Firebase] 백업 완료");
   } catch(e) {
-    console.warn("[Stock Firebase] 백업 실패:", e);
+    console.warn("[Stock] 백업 실패:", e);
   }
 }
 
@@ -366,17 +380,20 @@ localStorage.setItem = function(k, v) {
   _orig(k, v);
   if (KEYS.includes(k) && _uid) {
     clearTimeout(_timer);
-    _timer = setTimeout(backup, 3000);
+    _timer = setTimeout(backup, 2000);
   }
 };
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    console.log("[Stock Firebase] 로그인 안 됨");
+    // 로그인 안 됨 → Google 자동 로그인 시도
+    badge("Google 로그인 중...");
+    autoGoogleLogin();
     return;
   }
   _uid = user.uid;
-  console.log("[Stock Firebase] 로그인 감지:", user.email);
+  const name = user.displayName ? user.displayName.split(' ')[0] : user.email;
+  badge(name + " 동기화 중...");
   try {
     const snap = await get(ref(db, "users/" + _uid + "/apps/stock"));
     const local = localStorage.getItem("pf_v4");
@@ -384,13 +401,15 @@ onAuthStateChanged(auth, async (user) => {
     if (snap.exists() && snap.val()["pf_v4"] && isEmpty) {
       const data = snap.val();
       KEYS.forEach(k => { if(data[k]) _orig(k, data[k]); });
-      badge("데이터 복원됨! 🔄");
-      setTimeout(() => location.reload(), 1500);
+      badge("데이터 복원됨 🔄");
+      setTimeout(() => location.reload(), 1200);
     } else {
-      setTimeout(backup, 2000);
+      badge(name + " ✅ 동기화됨");
+      setTimeout(backup, 1500);
     }
   } catch(e) {
-    console.warn("[Stock Firebase] 오류:", e);
+    badge("동기화 오류", 'err');
+    console.warn("[Stock] 오류:", e);
   }
 });
 </script>
