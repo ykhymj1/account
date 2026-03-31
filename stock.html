@@ -1800,7 +1800,7 @@ function App(){
     }
     else if(form.assetType==="CMA"){
       if(!form.startDate){showToast("기산일을 입력해주세요.","error");return;}
-      if(!form.principal||parseFloat(form.principal)<=0){showToast("원금을 입력해주세요.","error");return;}
+      if(form.principal===""||form.principal===null||form.principal===undefined){showToast("원금을 입력해주세요.","error");return;}
       const principalNum=parseFloat(form.principal)||0;
       const todayStr=new Date().toISOString().slice(0,10);
       let basePrincipal=principalNum;
