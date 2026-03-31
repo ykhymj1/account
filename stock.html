@@ -310,15 +310,16 @@ function getFxCache() {
 window.__cache = { prices: getPricesCache(), fxCache: getFxCache() };
 </script>
 
-<!-- ★ Firebase 동기화 — stock.html 직접 로그인 방식 -->
+<!-- ★ Firebase 동기화 — Realtime Database 방식 -->
 <script type="module">
 import { initializeApp }     from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+import { getDatabase, ref, set, get } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js";
 
 const FB_CONFIG = {
   apiKey:            "AIzaSyD9A3cbUujY4agOwB0OL45ccsfRhBXETMw",
   authDomain:        "mymonth-6cd61.firebaseapp.com",
+  databaseURL:       "https://mymonth-6cd61-default-rtdb.firebaseio.com",
   projectId:         "mymonth-6cd61",
   storageBucket:     "mymonth-6cd61.firebasestorage.app",
   messagingSenderId: "1067760522796",
@@ -327,7 +328,7 @@ const FB_CONFIG = {
 
 const app  = initializeApp(FB_CONFIG, "stock");
 const auth = getAuth(app);
-const db   = getFirestore(app);
+const db   = getDatabase(app);
 
 const KEYS = ["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
 let _uid = null;
@@ -352,7 +353,7 @@ async function backup() {
   try {
     const data = { updatedAt: new Date().toISOString() };
     KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
-    await setDoc(doc(db, "users", _uid, "apps", "stock"), data, { merge: true });
+    await set(ref(db, "users/" + _uid + "/apps/stock"), data);
     badge("백업 완료 ✅");
     console.log("[Stock Firebase] 백업 완료");
   } catch(e) {
@@ -377,11 +378,11 @@ onAuthStateChanged(auth, async (user) => {
   _uid = user.uid;
   console.log("[Stock Firebase] 로그인 감지:", user.email);
   try {
-    const snap = await getDoc(doc(db, "users", _uid, "apps", "stock"));
+    const snap = await get(ref(db, "users/" + _uid + "/apps/stock"));
     const local = localStorage.getItem("pf_v4");
     const isEmpty = !local || local === '{"holdings":{},"fxRate":1360}';
-    if (snap.exists() && snap.data()["pf_v4"] && isEmpty) {
-      const data = snap.data();
+    if (snap.exists() && snap.val()["pf_v4"] && isEmpty) {
+      const data = snap.val();
       KEYS.forEach(k => { if(data[k]) _orig(k, data[k]); });
       badge("데이터 복원됨! 🔄");
       setTimeout(() => location.reload(), 1500);

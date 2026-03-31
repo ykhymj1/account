@@ -296,6 +296,7 @@ function fmtPct(n) {
 var FB_CONFIG = {
   apiKey:'AIzaSyD9A3cbUujY4agOwB0OL45ccsfRhBXETMw',
   authDomain:'mymonth-6cd61.firebaseapp.com',
+  databaseURL:'https://mymonth-6cd61-default-rtdb.firebaseio.com',
   projectId:'mymonth-6cd61',
   storageBucket:'mymonth-6cd61.firebasestorage.app',
   messagingSenderId:'1067760522796',
@@ -308,17 +309,17 @@ async function initFirebase(){
     var [m1,m2,m3]=await Promise.all([
       import('https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js'),
-      import('https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js')
+      import('https://www.gstatic.com/firebasejs/11.0.0/firebase-database.js')
     ]);
     var app=m1.initializeApp(FB_CONFIG);
     _fbAuth=m2.getAuth(app);
-    _fbDb=m3.getFirestore(app);
+    _fbDb=m3.getDatabase(app);
     _fbReady=true;
     window._fb={
       signIn:m2.signInWithEmailAndPassword,
       register:m2.createUserWithEmailAndPassword,
       signOut:m2.signOut,
-      doc:m3.doc,setDoc:m3.setDoc,getDoc:m3.getDoc
+      dbRef:m3.ref,dbSet:m3.set,dbGet:m3.get
     };
     window._fbAuth=_fbAuth;
     m2.onAuthStateChanged(_fbAuth,function(u){
@@ -388,9 +389,9 @@ async function backupToCloud(){
   try{
     var fb=window._fb,now=new Date().toISOString();
     var id={updatedAt:now};IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
-    await fb.setDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','index'),id,{merge:true});
+    await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
     var sd={updatedAt:now};STK_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)sd[k]=v;});
-    await fb.setDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','stock'),sd,{merge:true});
+    await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),sd);
     showSyncToast('백업 완료!');
   }catch(e){console.warn('[backup]',e);}
 }
@@ -399,10 +400,10 @@ async function restoreFromCloud(){
   if(!_fbUser||!_fbDb)return false;
   try{
     var fb=window._fb,ok=false;
-    var is=await fb.getDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','index'));
-    if(is.exists())IDX_KEYS.forEach(function(k){if(is.data()[k]){localStorage.setItem(k,is.data()[k]);ok=true;}});
-    var ss=await fb.getDoc(fb.doc(_fbDb,'users',_fbUser.uid,'apps','stock'));
-    if(ss.exists())STK_KEYS.forEach(function(k){if(ss.data()[k]){localStorage.setItem(k,ss.data()[k]);ok=true;}});
+    var is=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'));
+    if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
+    var ss=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'));
+    if(ss.exists())STK_KEYS.forEach(function(k){if(ss.val()[k]){localStorage.setItem(k,ss.val()[k]);ok=true;}});
     return ok;
   }catch(e){return false;}
 }
