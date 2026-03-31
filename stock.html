@@ -2109,7 +2109,7 @@ function App(){
                         {ac.shared?(
                           <div>
                             <div style={{fontSize:15,fontWeight:800,color:C.text}}>{won(ac.current)}</div>
-                            <div style={{fontSize:10,marginTop:1}}>{ac.cmaType?<><span style={{color:C.muted}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(myCur)}</span></>:`내 평가금액 ${won(myCur)}`}</div>
+                            <div style={{fontSize:10,marginTop:1}}>{ac.cmaType?<><span style={{color:C.muted}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(myCur)}</span></>:`내 평가금액 `}<span style={{color:C.green,fontWeight:800}}>{won(myCur)}</span></div>
                             <div style={{marginTop:3}}>
                               <ProfitBadge pct={ac.pct} pnl={myP} size="sm"/>
                             </div>
@@ -2164,7 +2164,7 @@ function App(){
                   {curAcct.shared?(
                     <div>
                       <div style={{fontSize:20,fontWeight:800,color:C.text}}>{won(curData.current)}</div>
-                      <div style={{fontSize:11,marginTop:1}}>{curAcct.cmaType?<><span style={{color:C.text}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(curData.current*0.5)}</span></>:`내 평가금액 ${won(curData.current*0.5)}`}</div>
+                      <div style={{fontSize:11,marginTop:1}}>{curAcct.cmaType?<><span style={{color:C.text}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(curData.current*0.5)}</span></>:`내 평가금액 `}<span style={{color:C.green,fontWeight:800}}>{won(curData.current*0.5)}</span></div>
                       <div style={{marginTop:4}}><ProfitBadge pct={curData.pct} pnl={curData.pnl}/></div>
                     </div>
                   ):(

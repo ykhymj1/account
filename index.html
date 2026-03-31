@@ -497,8 +497,9 @@ function getCmaDailyInterest(c){
 function renderCmaCard(c){
   var share=getCmaShare(c);
   var items=getCmaItems(c);
-  var yearInterest=getCmaYearInterest(c);
-  var dailyInterest=getCmaDailyInterest(c);
+  // ★ AMT CMA 카드: 전일이자/올해누적이자는 지분 없이 순수 총액
+  var yearInterest=items.reduce(function(sum,item){return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);},0);
+  var dailyInterest=items.reduce(function(sum,item){return sum+((item&&item.dailyInterest)||0);},0);
   return `
     <div style="background:#f8f9fa;border-radius:18px;padding:16px;border:1px solid #d1d9e6;box-shadow:0 4px 16px rgba(0,0,0,.08);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;">
@@ -527,8 +528,9 @@ function openCmaModal(){
   (_cmaDetails||[]).forEach(function(c){
     var sh=getCmaShare(c);
     totalCurrent+=(c.current||0);
-    totalPnl+=getCmaYearInterest(c);
-    totalDay+=getCmaDailyInterest(c);
+    // ★ 올해누적이자/전일이자: 지분 없이 순수 총액 합산
+    totalPnl+=getCmaItems(c).reduce(function(sum,item){return sum+((item&&item.yearInterest!=null?item.yearInterest:(item&&item.pnl)||0)||0);},0);
+    totalDay+=getCmaItems(c).reduce(function(sum,item){return sum+((item&&item.dailyInterest)||0);},0);
     myTotal+=(c.current||0)*sh;
   });
   summary.innerHTML=`
