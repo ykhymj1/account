@@ -253,7 +253,7 @@ input:focus{outline:none;}
 
 <!-- iframe: appLayer 밖에 독립 배치 → 항상 렌더링되어 React 즉시 마운트 -->
 <div id="appLayer"></div>
-<iframe id="stockFrame" src="./stock.html" allow="camera; microphone" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" onload="onStockFrameLoad()"></iframe>
+<iframe id="stockFrame" src="./stock.html" allow="camera; microphone" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
 
 <div id="syncToast"></div>
 <div id="syncMenuOverlay" style="display:none;position:fixed;inset:0;z-index:500;" onclick="closeSyncMenu()"></div>
@@ -302,20 +302,29 @@ var _fbAuth=null,_fbDb=null,_fbUser=null,_fbReady=false;
 
 async function initFirebase(){
   try{
-    var [m1,m2,m3]=await Promise.all([
+    var [m1,m2,m3,m4]=await Promise.all([
       import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'),
-      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js')
+      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js')
     ]);
     var app=m1.initializeApp(FB_CONFIG);
     _fbAuth=m2.getAuth(app);
     _fbDb=m3.getDatabase(app);
+    var _fbStorage=m4.getStorage(app);
     _fbReady=true;
     window._fb={
       signOut:m2.signOut,
       dbRef:m3.ref,dbSet:m3.set,dbGet:m3.get,
       GoogleAuthProvider:m2.GoogleAuthProvider,
-      signInWithPopup:m2.signInWithPopup
+      signInWithPopup:m2.signInWithPopup,
+      storage:_fbStorage,
+      storageRef:m4.ref,
+      uploadString:m4.uploadString,
+      getDownloadURL:m4.getDownloadURL,
+      listAll:m4.listAll,
+      getBlob:m4.getBlob,
+      deleteObject:m4.deleteObject
     };
     window._fbAuth=_fbAuth;
     // Google 로그인 함수 노출
@@ -355,18 +364,144 @@ window.skipLogin=function(){localStorage.setItem('fb_login_skipped','1');hideLog
 var IDX_KEYS=['asset_pin','asset_bio_cred'];
 var STK_KEYS=['pf_v4','pf_history_v1','pf_acct_order','pf_item_order'];
 
-async function backupToCloud(){
+/* ════ 백업 데이터 수집 ════ */
+function collectBackupData(now){
+  var id={updatedAt:now};
+  IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
+  var sd={updatedAt:now};
+  STK_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)sd[k]=v;});
+  return{index:id,stock:sd};
+}
+
+/* ════ ① Realtime DB 최신본 백업 ════ */
+async function backupRealtimeDB(fb,now,data){
+  await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),data.index);
+  await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),data.stock);
+}
+
+/* ════ ② Realtime DB 날짜별 스냅샷 (최근 5개 유지) ════ */
+async function backupSnapshotDB(fb,now,data){
+  var dateKey=now.slice(0,10); // YYYY-MM-DD
+  var snapPath='users/'+_fbUser.uid+'/backups/'+dateKey;
+  await fb.dbSet(fb.dbRef(_fbDb,snapPath),{updatedAt:now,index:data.index,stock:data.stock});
+  // 오래된 스냅샷 정리 (최근 5개만 유지)
+  try{
+    var listSnap=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/backups'));
+    if(listSnap.exists()){
+      var keys=Object.keys(listSnap.val()).sort(); // 날짜순 오름차순
+      if(keys.length>5){
+        var toDelete=keys.slice(0,keys.length-5); // 오래된 것부터 삭제
+        for(var i=0;i<toDelete.length;i++){
+          await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/backups/'+toDelete[i]),null);
+        }
+      }
+    }
+  }catch(e){console.warn('[snapshot-cleanup]',e);}
+}
+
+/* ════ ③ 구글 드라이브 백업 (JSON 파일 다운로드) ════ */
+function backupToGoogleDrive(now,data){
+  try{
+    var allData={updatedAt:now,index:data.index,stock:data.stock};
+    var jsonStr=JSON.stringify(allData,null,2);
+    var blob=new Blob([jsonStr],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download='YKH자산_백업_'+now.slice(0,10)+'.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    return true;
+  }catch(e){console.warn('[drive-backup]',e);return false;}
+}
+
+/* ════ stock iframe에서 최신 localStorage 데이터 요청 (Promise) ════ */
+function requestStockBackupData(){
+  return new Promise(function(resolve){
+    var sf=document.getElementById('stockFrame');
+    if(!sf||!sf.contentWindow){resolve(null);return;}
+    var timeout=setTimeout(function(){resolve(null);},3000); // 3초 타임아웃
+    function onMsg(e){
+      if(!e.data||e.data.type!=='BACKUP_DATA')return;
+      clearTimeout(timeout);
+      window.removeEventListener('message',onMsg);
+      resolve(e.data.data||null);
+    }
+    window.addEventListener('message',onMsg);
+    try{sf.contentWindow.postMessage({type:'REQUEST_BACKUP'},'*');}catch(err){clearTimeout(timeout);resolve(null);}
+  });
+}
+
+/* ════ 통합 백업 메인 함수 ════ */
+async function backupToCloud(includeGoogleDrive){
   if(!_fbUser||!_fbDb)return;
   try{
     var fb=window._fb,now=new Date().toISOString();
-    var id={updatedAt:now};IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
-    await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
-    var sd={updatedAt:now};STK_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)sd[k]=v;});
-    await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),sd);
-    showSyncToast('백업 완료!');
-  }catch(e){console.warn('[backup]',e);}
+    // ★ stock iframe에서 최신 데이터 먼저 수집
+    var stockLive=await requestStockBackupData();
+    var data=collectBackupData(now);
+    // stock iframe 응답이 있으면 덮어씀 (더 최신)
+    if(stockLive){
+      STK_KEYS.forEach(function(k){if(stockLive[k])data.stock[k]=stockLive[k];});
+    }
+    // ① Realtime DB 최신본
+    await backupRealtimeDB(fb,now,data);
+    // ② Realtime DB 날짜별 스냅샷 (최근 5개)
+    await backupSnapshotDB(fb,now,data);
+    // ③ 구글 드라이브 (요청 시에만)
+    if(includeGoogleDrive)backupToGoogleDrive(now,data);
+    showSyncToast(includeGoogleDrive?'☁️ 백업 + 드라이브 파일 저장 완료!':'☁️ 클라우드 백업 완료!');
+  }catch(e){console.warn('[backup]',e);showSyncToast('❌ 백업 실패');}
 }
 
+/* ════ Realtime DB 스냅샷 목록 가져오기 ════ */
+async function listSnapshots(){
+  if(!_fbUser||!_fbDb)return[];
+  try{
+    var fb=window._fb;
+    var snap=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/backups'));
+    if(!snap.exists())return[];
+    return Object.keys(snap.val()).sort().reverse(); // 최신순
+  }catch(e){return[];}
+}
+
+/* ════ Realtime DB 스냅샷으로 복원 ════ */
+async function restoreFromSnapshot(dateKey){
+  if(!_fbUser||!_fbDb)return false;
+  try{
+    var fb=window._fb;
+    var snap=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/backups/'+dateKey));
+    if(!snap.exists())return false;
+    var data=snap.val();
+    var ok=false;
+    if(data.index)IDX_KEYS.forEach(function(k){if(data.index[k]){localStorage.setItem(k,data.index[k]);ok=true;}});
+    if(data.stock)STK_KEYS.forEach(function(k){if(data.stock[k]){localStorage.setItem(k,data.stock[k]);ok=true;}});
+    return ok;
+  }catch(e){return false;}
+}
+
+/* ════ JSON 파일에서 복원 (구글 드라이브 파일) ════ */
+function restoreFromJsonFile(){
+  var input=document.createElement('input');
+  input.type='file';input.accept='.json';
+  input.onchange=async function(e){
+    var file=e.target.files[0];if(!file)return;
+    try{
+      var text=await file.text();
+      var data=JSON.parse(text);
+      var ok=false;
+      if(data.index)IDX_KEYS.forEach(function(k){if(data.index[k]){localStorage.setItem(k,data.index[k]);ok=true;}});
+      if(data.stock)STK_KEYS.forEach(function(k){if(data.stock[k]){localStorage.setItem(k,data.stock[k]);ok=true;}});
+      if(ok){showSyncToast('✅ 파일 복원 완료! 새로고침합니다...');setTimeout(function(){location.reload();},1800);}
+      else{showSyncToast('❌ 파일에 유효한 데이터가 없어요');}
+    }catch(e){showSyncToast('❌ 파일 읽기 실패');}
+  };
+  document.body.appendChild(input);input.click();document.body.removeChild(input);
+}
+
+/* ════ Realtime DB 최신본 복원 (기존) ════ */
 async function restoreFromCloud(){
   if(!_fbUser||!_fbDb)return false;
   try{
@@ -392,15 +527,54 @@ window.showSyncMenu=function(){
   if(m.style.display==='block'){closeSyncMenu();return;}
   m.innerHTML=_fbUser?
     '<div style="font-size:13px;color:#6b7280;margin-bottom:14px;text-align:center;font-weight:600;"><span style="color:#059669;font-weight:800;">'+((_fbUser&&_fbUser.email)||'')+'</span><br><span style="font-size:11px;">로그인됨</span></div>'+
-    '<div style="display:flex;flex-direction:column;gap:10px;">'+
-    '<button onclick="backupToCloud();closeSyncMenu();" style="padding:14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">지금 백업하기</button>'+
-    '<button onclick="doCloudRestore()" style="padding:14px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:12px;color:#374151;font-size:14px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:700;">클라우드에서 복원</button>'+
-    '<button onclick="doLogout()" style="padding:12px;background:transparent;border:none;color:#9ca3af;font-size:12px;cursor:pointer;text-decoration:underline;font-family:Noto Sans KR,sans-serif;">로그아웃</button></div>':
+    '<div style="font-size:11px;color:#6b7280;font-weight:700;margin-bottom:2px;">── 백업 ──</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;">'+
+    '<button onclick="backupToCloud();closeSyncMenu();" style="padding:14px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">☁️ 클라우드 백업 (DB 날짜별 저장)</button>'+
+    '<button onclick="backupToCloud(true);closeSyncMenu();" style="padding:14px;background:linear-gradient(135deg,#059669,#047857);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">☁️+📁 백업 + 드라이브 파일 저장</button>'+
+    '<div style="font-size:11px;color:#6b7280;font-weight:700;margin-top:4px;">── 복원 ──</div>'+
+    '<button onclick="doShowSnapshotList()" style="padding:13px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;color:#1d4ed8;font-size:14px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:700;">📋 날짜별 클라우드 복원</button>'+
+    '<button onclick="closeSyncMenu();restoreFromJsonFile();" style="padding:13px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;color:#166534;font-size:14px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:700;">📂 드라이브 파일로 복원</button>'+
+    '<button onclick="doCloudRestore()" style="padding:11px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:10px;color:#6b7280;font-size:12px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:600;">🔄 최신 DB 즉시 복원</button>'+
+    '<button onclick="doLogout()" style="padding:10px;background:transparent;border:none;color:#9ca3af;font-size:12px;cursor:pointer;text-decoration:underline;font-family:Noto Sans KR,sans-serif;">로그아웃</button></div>':
     '<div style="font-size:13px;color:#6b7280;margin-bottom:16px;text-align:center;">로그인 안 된 상태예요</div>'+
     '<button onclick="closeSyncMenu();showLoginScreen();" style="width:100%;padding:16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:14px;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">로그인 / 계정 만들기</button>';
   m.style.display='block';o.style.display='block';
 };
 window.closeSyncMenu=function(){document.getElementById('syncMenu').style.display='none';document.getElementById('syncMenuOverlay').style.display='none';};
+
+/* ════ 날짜별 스냅샷 목록 UI ════ */
+window.doShowSnapshotList=async function(){
+  var m=document.getElementById('syncMenu');
+  m.innerHTML=
+    '<div style="font-size:14px;font-weight:800;color:#111827;margin-bottom:12px;">📋 날짜별 백업 목록 (최근 5개)</div>'+
+    '<div id="snapshotListArea" style="font-size:13px;color:#6b7280;">목록 불러오는 중...</div>'+
+    '<button onclick="showSyncMenu()" style="margin-top:14px;width:100%;padding:12px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:10px;color:#374151;font-size:13px;cursor:pointer;font-family:Noto Sans KR,sans-serif;font-weight:700;">← 뒤로</button>';
+  var keys=await listSnapshots();
+  var area=document.getElementById('snapshotListArea');
+  if(!area)return;
+  if(!keys||!keys.length){
+    area.innerHTML='<div style="text-align:center;padding:20px 0;color:#6b7280;">저장된 백업이 없어요.<br>백업 버튼을 눌러 첫 백업을 만드세요!</div>';
+    return;
+  }
+  area.innerHTML=keys.map(function(dateKey,i){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #e5e7eb;">'+
+      '<div>'+
+        '<span style="font-weight:800;color:#111827;font-size:14px;">'+dateKey+'</span>'+
+        (i===0?'<span style="margin-left:6px;font-size:10px;background:#dcfce7;color:#166534;padding:2px 6px;border-radius:6px;font-weight:700;">최신</span>':'')+
+      '</div>'+
+      '<button onclick="doRestoreSnapshot(this.dataset.key)" data-key="'+dateKey+'" style="padding:8px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1d4ed8;font-size:12px;font-weight:800;cursor:pointer;font-family:Noto Sans KR,sans-serif;">복원</button>'+
+    '</div>';
+  }).join('');
+};
+
+window.doRestoreSnapshot=async function(dateKey){
+  if(!confirm(dateKey+' 백업으로 복원할까요?\n현재 데이터는 덮어씌워집니다.'))return;
+  showSyncToast('복원 중...');
+  var ok=await restoreFromSnapshot(dateKey);
+  if(ok){showSyncToast('✅ 복원 완료! 새로고침합니다...');setTimeout(function(){location.reload();},1800);}
+  else{showSyncToast('❌ 복원 실패. 다시 시도해주세요.');}
+};
+
 window.doLogout=async function(){closeSyncMenu();try{await window._fb.signOut(_fbAuth);localStorage.removeItem('fb_login_skipped');showSyncToast('로그아웃됐어요');updateSyncStatus(false,null);}catch(e){}};
 window.doCloudRestore=async function(){closeSyncMenu();showSyncToast('복원 중...');var ok=await restoreFromCloud();if(ok){showSyncToast('복원 완료! 새로고침합니다...');setTimeout(function(){location.reload();},1800);}else{showSyncToast('복원할 데이터가 없어요');}};
 function showSyncToast(msg){var t=document.getElementById('syncToast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},3000);}
@@ -770,6 +944,11 @@ function enterApp(which){
   document.getElementById('stockFrame').classList.add('show');
 }
 var _stockFrameLoaded=false;
+// ★ iframe load 이벤트를 script에서 연결 (onload 인라인 제거로 타이밍 에러 방지)
+document.addEventListener('DOMContentLoaded',function(){
+  var sf=document.getElementById('stockFrame');
+  if(sf)sf.addEventListener('load',onStockFrameLoad);
+});
 function onStockFrameLoad(){
   _stockFrameLoaded=true;
   var sf=document.getElementById('stockFrame');
