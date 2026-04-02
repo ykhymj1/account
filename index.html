@@ -1180,9 +1180,9 @@ function wlSave(list){
   try{localStorage.setItem(WL_KEY,JSON.stringify(list));}catch(e){}
 }
 
-/* ─ 가격 조회 (stock.html과 완전 동일한 방식) ─ */
+/* ─ 가격 조회 (stock.html fetchOneTicker 완전 동일 복사) ─ */
 
-// fetch with timeout helper
+// ★ stock.html tf 함수와 100% 동일한 구조
 function wlTF(url, ms, hdrs){
   var c=new AbortController();
   var t=setTimeout(function(){c.abort();},ms);
@@ -1199,7 +1199,7 @@ function wlTF(url, ms, hdrs){
     .catch(function(e){clearTimeout(t);throw e;});
 }
 
-// v8 chart 파싱 (allorigins /get → contents 필드 or 직접)
+// ★ stock.html pV8과 100% 동일
 function wlPV8(raw){
   try{
     var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
@@ -1209,7 +1209,7 @@ function wlPV8(raw){
   }catch(e){}
   return null;
 }
-// v7 quote 파싱
+// ★ stock.html pV7과 100% 동일
 function wlPV7(raw){
   try{
     var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
@@ -1220,13 +1220,14 @@ function wlPV7(raw){
   return null;
 }
 
-// 단일 티커 조회 — stock.html과 동일한 12개 프록시 병렬 + Promise.any + retry
+// ★ stock.html fetchOneTicker와 100% 동일한 로직
 async function wlFetchOneTicker(tk){
   var yUrl1='https://query1.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
   var yUrl2='https://query2.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
   var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
   var qUrl2='https://query2.finance.yahoo.com/v7/finance/quote?symbols='+tk;
 
+  // ★ stock.html sources 배열과 100% 동일 (프록시 키도 동일)
   var sources=[
     wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
@@ -1237,24 +1238,29 @@ async function wlFetchOneTicker(tk){
     wlTF('https://corsproxy.io/?'+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?'+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_wl'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_pf'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
   ];
 
-  // Promise.any polyfill (stock.html 동일)
-  var pAny=typeof Promise.any==='function'?Promise.any:function(arr){
+  // ★ Promise.any polyfill — stock.html과 동일
+  var pAny=typeof Promise.any==='function'?Promise.any.bind(Promise):function(arr){
     return new Promise(function(res,rej){
       var errs=[],left=arr.length;
       if(!left){rej(new Error('empty'));return;}
-      arr.forEach(function(p){Promise.resolve(p).then(res).catch(function(e){errs.push(e);if(--left===0)rej(errs);});});
+      arr.forEach(function(p){
+        Promise.resolve(p).then(res).catch(function(e){
+          errs.push(e);
+          if(--left===0)rej(errs);
+        });
+      });
     });
   };
 
   try{
     return await pAny(sources);
   }catch(e){
-    // 1차 실패 → 2초 후 allorigins만 재시도
+    // 1차 실패 → 2초 후 allorigins만 재시도 (stock.html 동일)
     await new Promise(function(res){setTimeout(res,2000);});
     try{
       return await pAny([
@@ -1277,59 +1283,86 @@ async function wlFetchPrices(list){
     return hh+':'+mm+ap;
   }
 
-  try{
-    // ★ 환율 + 주식 완전 병렬 동시 시작
-    var fxPromise=(function(){
-      // 환율: Google Script + fawazahmed 동시 시도, 빠른 쪽 사용
-      var tryGS=function(){
-        var c=new AbortController(),t=setTimeout(function(){c.abort();},8000);
-        return fetch(WL_FX_URL,{signal:c.signal})
-          .then(function(r){clearTimeout(t);return r.json();})
-          .then(function(d){
-            if(d&&d.rate&&d.rate>500&&d.rate<5000)return d.rate;
-            throw new Error('invalid');
-          })
-          .catch(function(e){clearTimeout(t);throw e;});
-      };
-      var tryFawaz=function(){
-        var c=new AbortController(),t=setTimeout(function(){c.abort();},8000);
-        return fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',{signal:c.signal})
-          .then(function(r){clearTimeout(t);return r.json();})
-          .then(function(d){
-            var v=d&&d.usd&&d.usd.krw;
-            if(v&&v>500&&v<5000)return Math.round(v);
-            throw new Error('invalid');
-          })
-          .catch(function(e){clearTimeout(t);throw e;});
-      };
-      var pAny=typeof Promise.any==='function'?Promise.any:function(arr){
-        return new Promise(function(res,rej){var e=[],l=arr.length;if(!l){rej(new Error('empty'));return;}arr.forEach(function(p){Promise.resolve(p).then(res).catch(function(err){e.push(err);if(--l===0)rej(e);});});});
-      };
-      return pAny([tryGS(),tryFawaz()])
-        .then(function(rate){
-          _wlPrices['USDKRW']={price:rate,pct:null,currency:'fx'};
-          wlRender(); // 환율 오는 즉시 바로 표시
-        })
-        .catch(function(){});
-    })();
+  var isValid=function(v){return v&&v>500&&v<5000;};
 
-    // 주식/ETF — 모든 종목 완전 병렬
-    var stockItems=list.filter(function(i){return i.type==='usd'||i.type==='krw';});
-    var stockPromise=Promise.allSettled(stockItems.map(async function(item){
-      var tk=(item.type==='krw')?(item.symbol+'.KS'):item.symbol;
-      var result=await wlFetchOneTicker(tk);
-      if(result){
-        var pct=result.prev>0?((result.price-result.prev)/result.prev*100):0;
-        _wlPrices[item.symbol]={price:result.price,pct:pct,currency:item.type,prev:result.prev};
-        wlRender(); // 각 종목 오는 즉시 표시
+  // ★ 환율 — stock.html fetchFxRate와 동일한 3개 소스 순차 폴백
+  var fxPromise=(async function(){
+    var EX_URL='http://api.exconvert.com/convert?access_key=cd94debe-e32c0a05-7ec91d21-86dcf56a&from=USD&to=KRW&amount=1';
+
+    // 1순위: Google Script
+    var tryGS=async function(){
+      var c=new AbortController(),t=setTimeout(function(){c.abort();},10000);
+      try{
+        var r=await fetch(WL_FX_URL,{signal:c.signal});
+        clearTimeout(t);
+        var d=await r.json();
+        var v=d&&d.rate;
+        if(isValid(v))return{v:Math.round(v),name:'Google Finance'};
+        throw new Error('invalid');
+      }catch(e){clearTimeout(t);throw e;}
+    };
+
+    // 2순위: exconvert (allorigins 프록시)
+    var tryExconvert=async function(){
+      var proxyUrls=[
+        'https://api.allorigins.win/get?url='+encodeURIComponent(EX_URL),
+        'https://corsproxy.io/?'+encodeURIComponent(EX_URL),
+      ];
+      for(var pi=0;pi<proxyUrls.length;pi++){
+        var c2=new AbortController(),t2=setTimeout(function(){c2.abort();},10000);
+        try{
+          var r2=await fetch(proxyUrls[pi],{signal:c2.signal});
+          clearTimeout(t2);
+          var j2=await r2.json();
+          var raw=j2&&j2.contents?JSON.parse(j2.contents):j2;
+          var v2=raw&&raw.result&&(raw.result.KRW||raw.result.rate);
+          if(isValid(v2))return{v:Math.round(v2),name:'exconvert.com'};
+        }catch(e){clearTimeout(t2);}
       }
-    }));
+      throw new Error('exconvert failed');
+    };
 
-    // 환율+주식 모두 완료 대기
+    // 3순위: fawazahmed0 CDN
+    var tryFawaz=async function(){
+      var c=new AbortController(),t=setTimeout(function(){c.abort();},8000);
+      try{
+        var r=await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',{signal:c.signal});
+        clearTimeout(t);
+        var d=await r.json();
+        var v=d&&d.usd&&d.usd.krw;
+        if(isValid(v))return{v:Math.round(v),name:'fawazahmed0'};
+        throw new Error('invalid');
+      }catch(e){clearTimeout(t);throw e;}
+    };
+
+    var result=null;
+    try{result=await tryGS();}catch(e){}
+    if(!result){try{result=await tryExconvert();}catch(e){}}
+    if(!result){try{result=await tryFawaz();}catch(e){}}
+
+    if(result&&isValid(result.v)){
+      _wlPrices['USDKRW']={price:result.v,pct:null,currency:'fx'};
+      wlRender();
+    }
+  })();
+
+  // ★ 주식/ETF — 모든 종목 완전 병렬 (stock.html Promise.allSettled 방식)
+  var stockItems=list.filter(function(i){return i.type==='usd'||i.type==='krw';});
+  var stockPromise=Promise.allSettled(stockItems.map(async function(item){
+    var tk=(item.type==='krw')?(item.symbol+'.KS'):item.symbol;
+    var result=await wlFetchOneTicker(tk);
+    if(result){
+      var pct=result.prev>0?((result.price-result.prev)/result.prev*100):0;
+      _wlPrices[item.symbol]={price:result.price,pct:pct,currency:item.type,prev:result.prev};
+      wlRender();
+    }
+  }));
+
+  try{
     await Promise.all([fxPromise, stockPromise]);
-
     if(updEl)updEl.textContent='Updated '+nowTime();
-  }finally{
+  }catch(e){}
+  finally{
     _wlLoading=false;
   }
   wlRender();
