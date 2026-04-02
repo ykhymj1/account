@@ -102,8 +102,8 @@ input:focus{outline:none;}
 .wl-card.dragging{opacity:.45;box-shadow:0 8px 24px rgba(0,0,0,.18);}
 .wl-card.drag-over{border-color:#2563eb;background:#eff6ff;}
 /* ★ 글자 크게/진하게 */
-.wl-price{font-size:19px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.2;}
-.wl-name{font-size:12px;color:#475569;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wl-price{font-size:18px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.2;margin-top:3px;}
+.wl-name{font-size:14px;color:#111827;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.2px;}
 .wl-pct{font-size:13px;font-weight:800;margin-top:5px;display:flex;align-items:center;gap:3px;}
 .wl-up{color:#dc2626;}.wl-dn{color:#2563eb;}.wl-flat{color:#94a3b8;}
 .wl-arrow{font-size:12px;}
@@ -1402,8 +1402,8 @@ function wlRender(){
     card.dataset.idx=idx;
     card.draggable=true;
     card.innerHTML=
-      '<div class="wl-price">'+priceStr+'</div>'+
       '<div class="wl-name">'+item.name+'</div>'+
+      '<div class="wl-price">'+priceStr+'</div>'+
       (pctStr?'<div class="wl-pct '+pctClass+'"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat">--</div>');
     // drag events
     card.addEventListener('dragstart',function(e){_wlDragSrc=idx;card.classList.add('dragging');});
