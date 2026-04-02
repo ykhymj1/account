@@ -345,7 +345,27 @@ async function initFirebase(){
     };
     m2.onAuthStateChanged(_fbAuth,function(u){
       _fbUser=u;
-      if(u){ updateSyncStatus(true,u.displayName||u.email); hideLoginScreen(); startApp(); setTimeout(backupToCloud,1500); }
+      if(u){
+        updateSyncStatus(true,u.displayName||u.email);
+        hideLoginScreen();
+        startApp();
+        // ★ 로그인 시 타임스탬프 비교 후 자동 동기화
+        setTimeout(async function(){
+          var result=await restoreFromCloud();
+          if(result==='local_newer'){
+            // 로컬이 더 최신 → Firebase에 업로드
+            await backupToCloud();
+            showSyncToast('☁️ 로컬 데이터가 최신 → Firebase에 저장 완료!');
+          } else if(result){
+            // Firebase가 더 최신 → 로컬에 적용 후 새로고침
+            showSyncToast('🔄 최신 데이터로 동기화됐어요!');
+            setTimeout(function(){location.reload();},1800);
+          } else {
+            // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드
+            await backupToCloud();
+          }
+        },1500);
+      }
       else { updateSyncStatus(false,null); }
     });
     window._fbOnAuth=m2.onAuthStateChanged;
@@ -452,6 +472,8 @@ async function backupToCloud(includeGoogleDrive){
     await backupSnapshotDB(fb,now,data);
     // ③ 구글 드라이브 (요청 시에만)
     if(includeGoogleDrive)backupToGoogleDrive(now,data);
+    // ★ 로컬에도 업데이트 시각 저장 (동기화 비교용)
+    localStorage.setItem('_local_updatedAt', now);
     showSyncToast(includeGoogleDrive?'☁️ 백업 + 드라이브 파일 저장 완료!':'☁️ 클라우드 백업 완료!');
   }catch(e){console.warn('[backup]',e);showSyncToast('❌ 백업 실패');}
 }
@@ -507,8 +529,23 @@ async function restoreFromCloud(){
   try{
     var fb=window._fb,ok=false;
     var is=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'));
-    if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
     var ss=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'));
+    // ★ 타임스탬프 비교: Firebase vs 로컬 중 최신 데이터 우선
+    var fbTime=null;
+    if(is.exists()&&is.val().updatedAt)fbTime=new Date(is.val().updatedAt).getTime();
+    if(!fbTime&&ss.exists()&&ss.val().updatedAt)fbTime=new Date(ss.val().updatedAt).getTime();
+    var localTime=null;
+    try{
+      // 로컬 업데이트 시각은 별도 키에 저장
+      var lt=localStorage.getItem('_local_updatedAt');
+      if(lt)localTime=new Date(lt).getTime();
+    }catch(e){}
+    // Firebase가 더 최신이거나 로컬에 타임스탬프 없을 때만 복원
+    if(fbTime&&localTime&&localTime>fbTime){
+      console.log('[sync] 로컬이 더 최신 → Firebase에 업로드');
+      return 'local_newer';
+    }
+    if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
     if(ss.exists())STK_KEYS.forEach(function(k){if(ss.val()[k]){localStorage.setItem(k,ss.val()[k]);ok=true;}});
     return ok;
   }catch(e){return false;}

@@ -398,12 +398,18 @@ onAuthStateChanged(auth, async (user) => {
     const snap = await get(ref(db, "users/" + _uid + "/apps/stock"));
     const local = localStorage.getItem("pf_v4");
     const isEmpty = !local || local === '{"holdings":{},"fxRate":1360}';
-    if (snap.exists() && snap.val()["pf_v4"] && isEmpty) {
+    // ★ 타임스탬프 비교: Firebase vs 로컬 중 최신 우선
+    let fbTime = null, localTime = null;
+    if (snap.exists() && snap.val().updatedAt) fbTime = new Date(snap.val().updatedAt).getTime();
+    try { const pfd = JSON.parse(local||'{}'); if(pfd.updatedAt) localTime = new Date(pfd.updatedAt).getTime(); } catch(e2){}
+    if (snap.exists() && snap.val()["pf_v4"] && (isEmpty || (fbTime && localTime && fbTime > localTime))) {
+      // Firebase가 더 최신이거나 로컬이 비어있음 → Firebase로 복원
       const data = snap.val();
       KEYS.forEach(k => { if(data[k]) _orig(k, data[k]); });
-      badge("데이터 복원됨 🔄");
+      badge("최신 데이터 동기화됨 🔄");
       setTimeout(() => location.reload(), 1200);
     } else {
+      // 로컬이 더 최신 → Firebase에 업로드
       badge(name + " ✅ 동기화됨");
       setTimeout(backup, 1500);
     }
@@ -494,7 +500,14 @@ const calcCMA=h=>{
   const currentPrincipal=parseFloat(h.principal)||0;
   const rate=parseFloat(h.rate)||0;
   const start=parseDate(h.startDate);
-  if(!currentPrincipal||!rate||!start)return null;
+  if(!rate||!start)return null;
+  // ★ 원금이 0이어도 누적이자 보존
+  if(!currentPrincipal){
+    const savedYear=parseFloat(h.savedYearInterest)||parseFloat(h.yearInterest)||parseFloat(h.pnl)||0;
+    const savedTotal=parseFloat(h.savedTotalInterest)||parseFloat(h.totalInterest)||0;
+    return{principal:0,invested:0,current:0,pnl:savedYear,yearInterest:savedYear,
+      totalInterest:savedTotal,pct:0,totalPct:0,days:0,dailyInterest:0};
+  }
 
   const today=new Date();
   today.setHours(0,0,0,0);
@@ -1837,6 +1850,10 @@ function App(){
             .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
         }
       }
+      // ★ 원금 0으로 수정 시 누적이자 보존
+      const prevCalc=prevEntry&&prevEntry.assetType==="CMA"?calcCMA(prevEntry):null;
+      const savedYI=principalNum===0&&prevCalc?(prevCalc.yearInterest||0):undefined;
+      const savedTI=principalNum===0&&prevCalc?(prevCalc.totalInterest||0):undefined;
       entry={
         name:form.name.trim(),
         assetType:"CMA",
@@ -1845,7 +1862,9 @@ function App(){
         adjustments,
         rate:form.rate||"0",
         startDate:form.startDate,
-        memo:form.memo||""
+        memo:form.memo||"",
+        ...(savedYI!==undefined?{savedYearInterest:savedYI}:{}),
+        ...(savedTI!==undefined?{savedTotalInterest:savedTI}:{})
       };
     }
     else if(form.assetType==="적금"){
