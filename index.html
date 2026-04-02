@@ -353,18 +353,19 @@ async function initFirebase(){
         setTimeout(async function(){
           var result=await restoreFromCloud();
           if(result==='local_newer'){
-            // 로컬이 더 최신 → Firebase에 업로드
+            // 로컬이 더 최신 → Firebase에 업로드 (reload 없음)
             await backupToCloud();
-            showSyncToast('☁️ 로컬 데이터가 최신 → Firebase에 저장 완료!');
+            showSyncToast('☁️ 로컬 데이터 Firebase에 저장 완료!');
           } else if(result){
-            // Firebase가 더 최신 → 로컬에 적용 후 새로고침
+            // Firebase가 더 최신 → stock iframe에 갱신 요청 (reload 없음)
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
-            setTimeout(function(){location.reload();},1800);
+            var sf=document.getElementById('stockFrame');
+            if(sf&&sf.contentWindow)sf.contentWindow.postMessage({type:'RELOAD_DATA'},'*');
           } else {
             // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드
             await backupToCloud();
           }
-        },1500);
+        },2000);
       }
       else { updateSyncStatus(false,null); }
     });
@@ -1039,7 +1040,7 @@ _fbFallback=setTimeout(function(){
       var unsub=window._fbOnAuth(_fbAuth,function(u){unsub();_fbUser=u;resolve();});
       setTimeout(resolve,5000);
     });
-    if(_fbUser){updateSyncStatus(true,_fbUser.email);setTimeout(backupToCloud,3000);}
+    if(_fbUser){updateSyncStatus(true,_fbUser.email);}  // 동기화는 onAuthStateChanged에서 처리
     else{updateSyncStatus(false,null);localStorage.setItem('fb_login_skipped','1');}
   }catch(e){console.warn('[init]',e);}
   startApp();
