@@ -34,7 +34,7 @@ input:focus{outline:none;}
 .login-btn-primary:disabled{background:#d1d9e6;color:#9ca3af;cursor:not-allowed;}
 .login-btn-secondary{width:100%;padding:14px;background:#fff;border:1.5px solid #d1d9e6;border-radius:14px;color:#374151;font-size:14px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;}
 .login-btn-secondary:active{border-color:#2563eb;color:#2563eb;}
-#lockScreen{display:none;flex-direction:column;align-items:center;justify-content:center;background:#f0f4f8;padding:32px 24px;z-index:100;overflow-y:auto;}
+#lockScreen{display:none;flex-direction:column;align-items:center;justify-content:center;background:#f0f4f8;padding:32px 24px 220px;z-index:100;overflow-y:auto;}
 #lockScreen.show{display:flex;}
 .pin-dots{display:flex;gap:18px;margin-bottom:34px;}
 .pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid #d1d9e6;transition:all .14s;}
@@ -54,6 +54,31 @@ input:focus{outline:none;}
 .bio-status.ok{color:#059669;}.bio-status.err{color:#dc2626;}
 #pinSetup{position:fixed;inset:0;max-width:480px;margin:0 auto;z-index:101;background:#f0f4f8;display:none;flex-direction:column;align-items:center;justify-content:center;}
 #pinSetup.show{display:flex;}
+
+/* ★ Watchlist Panel */
+#watchlistPanel{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:105;background:#fff;border-radius:22px 22px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.12);border-top:1.5px solid #e8eef7;transition:transform .3s ease;padding:0 0 env(safe-area-inset-bottom,0px);}
+#watchlistPanel.hidden{transform:translateX(-50%) translateY(100%);}
+#watchlistHandle{width:36px;height:4px;background:#d1d9e6;border-radius:2px;margin:10px auto 0;}
+#watchlistHeader{display:flex;justify-content:space-between;align-items:center;padding:8px 16px 4px;}
+#watchlistGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:4px 12px 14px;max-height:52vh;overflow-y:auto;}
+.wl-card{background:#f8fafc;border:1.5px solid #e8eef7;border-radius:14px;padding:12px 14px;position:relative;cursor:grab;user-select:none;-webkit-user-select:none;transition:box-shadow .15s;}
+.wl-card:active{box-shadow:0 4px 16px rgba(0,0,0,.12);}
+.wl-card.dragging{opacity:.5;box-shadow:0 8px 24px rgba(0,0,0,.18);}
+.wl-card.drag-over{border-color:#2563eb;background:#eff6ff;}
+.wl-price{font-size:18px;font-weight:800;color:#111827;letter-spacing:-.3px;}
+.wl-name{font-size:10px;color:#6b7280;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wl-pct{font-size:11px;font-weight:800;margin-top:4px;}
+.wl-up{color:#dc2626;}.wl-dn{color:#2563eb;}.wl-flat{color:#6b7280;}
+.wl-arrow{font-size:13px;margin-right:3px;}
+#wlAddBtn{display:flex;align-items:center;justify-content:center;gap:4px;margin:0 12px 12px;padding:11px;border-radius:12px;background:#eff6ff;border:1.5px dashed #93c5fd;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;}
+/* Watchlist edit modal */
+#wlModal{position:fixed;inset:0;max-width:480px;margin:0 auto;z-index:200;background:rgba(0,0,0,.55);display:none;align-items:flex-end;}
+#wlModal.show{display:flex;}
+#wlModalSheet{background:#fff;border-radius:22px 22px 0 0;width:100%;padding:24px 18px 40px;max-height:80vh;overflow-y:auto;}
+.wl-edit-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #f0f4f8;}
+.wl-edit-row:last-child{border-bottom:none;}
+.wl-drag-handle{color:#9ca3af;font-size:18px;cursor:grab;padding:0 4px;}
+
 #homeScreen{display:none;z-index:50;overflow-y:auto;background:#f0f4f8;}
 #homeScreen.show{display:block;}
 #appLayer{display:none;z-index:60;}
@@ -83,6 +108,48 @@ input:focus{outline:none;}
       Google로 로그인
     </button>
     <button onclick="skipLogin()" style="background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;text-decoration:underline;padding:8px;font-family:'Noto Sans KR',sans-serif;font-weight:500;">나중에 하기 (동기화 없이 사용)</button>
+  </div>
+</div>
+
+<!-- ★ Watchlist Panel (잠금화면 하단 오버레이) -->
+<div id="watchlistPanel" class="hidden">
+  <div id="watchlistHandle"></div>
+  <div id="watchlistHeader">
+    <div style="font-size:13px;font-weight:800;color:#111827;">📈 관심종목</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span id="wlUpdatedAt" style="font-size:10px;color:#9ca3af;font-family:'DM Mono',monospace;"></span>
+      <button onclick="wlRefresh()" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#2563eb;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;">↻</button>
+      <button onclick="wlOpenEdit()" style="background:#f0f4f8;border:1px solid #d1d9e6;border-radius:8px;color:#374151;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;">편집</button>
+    </div>
+  </div>
+  <div id="watchlistGrid"></div>
+  <div id="wlAddBtn" onclick="wlOpenEdit()">＋ 종목 추가 / 편집</div>
+</div>
+
+<!-- Watchlist 편집 모달 -->
+<div id="wlModal">
+  <div id="wlModalSheet">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <div style="font-size:16px;font-weight:800;color:#111827;">관심종목 편집</div>
+      <button onclick="wlCloseEdit()" style="background:#f0f4f8;border:1px solid #d1d9e6;border-radius:10px;color:#374151;font-size:13px;font-weight:700;padding:8px 16px;cursor:pointer;">완료</button>
+    </div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:12px;font-weight:600;">종목을 길게 눌러 순서를 변경하거나, 삭제할 수 있어요</div>
+    <div id="wlEditList"></div>
+    <div style="margin-top:16px;">
+      <div style="font-size:12px;color:#374151;font-weight:700;margin-bottom:8px;">종목 추가</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <input id="wlAddSymbol" placeholder="티커 (예: VOO, 360750)" style="flex:1;padding:11px 14px;border:1.5px solid #d1d9e6;border-radius:10px;font-size:15px;background:#f8f9fa;color:#111827;outline:none;"/>
+        <input id="wlAddName" placeholder="표시이름 (예: VOO)" style="flex:1;padding:11px 14px;border:1.5px solid #d1d9e6;border-radius:10px;font-size:15px;background:#f8f9fa;color:#111827;outline:none;"/>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <select id="wlAddType" style="flex:1;padding:11px 14px;border:1.5px solid #d1d9e6;border-radius:10px;font-size:14px;background:#f8f9fa;color:#111827;outline:none;">
+          <option value="usd">미국주식/ETF (달러)</option>
+          <option value="krw">한국주식/ETF (원화)</option>
+          <option value="fx">환율 (USD/KRW)</option>
+        </select>
+      </div>
+      <button onclick="wlAddItem()" style="width:100%;padding:13px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;">＋ 추가</button>
+    </div>
   </div>
 </div>
 
@@ -950,7 +1017,10 @@ async function enrollBio(){
 }
 
 /* ════ 앱 흐름 ════ */
-function unlock(){document.getElementById('lockScreen').classList.remove('show');document.getElementById('pinSetup').classList.remove('show');showHome();}
+function unlock(){document.getElementById('lockScreen').classList.remove('show');document.getElementById('pinSetup').classList.remove('show');
+  // ★ Watchlist 숨기기
+  var wlp=document.getElementById('watchlistPanel');if(wlp)wlp.classList.add('hidden');
+  showHome();}
 var _summaryTimeoutId=null;
 function showHome(){
   document.getElementById('homeScreen').classList.add('show');
@@ -1010,7 +1080,322 @@ function lockApp(){
   pinBuf='';dots('d',0);setSt('','');
   if(hasBio())setSt('버튼으로 지문 잠금해제','');
   else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
+  // ★ Watchlist 표시
+  var wlp=document.getElementById('watchlistPanel');
+  if(wlp){wlp.classList.remove('hidden');wlRefresh();}
 }
+
+/* ════════════════════════════════════════
+   ★ WATCHLIST  (잠금화면 하단 관심종목)
+   ════════════════════════════════════════ */
+var WL_KEY = 'ykh_watchlist_v1';
+var WL_FX_URL = 'https://script.google.com/macros/s/AKfycbyXm2m2VkNbyYiV6UldqNuRG0ccfZqwLZLKE2bVnf-7_UdeN_S3h95uidGtg93HaRstBg/exec';
+
+var _wlPrices = {};
+var _wlLoading = false;
+var _wlDragSrc = null;
+
+var WL_DEFAULT = [
+  {symbol:'USDKRW',name:'USD/KRW',type:'fx'},
+  {symbol:'VOO',name:'VOO',type:'usd'},
+  {symbol:'QQQM',name:'QQQM',type:'usd'},
+  {symbol:'360750',name:'Tiger S&P500',type:'krw'},
+  {symbol:'133690',name:'Tiger 나스닥100',type:'krw'},
+  {symbol:'0047A0',name:'Tiger차이나테크',type:'krw'},
+  {symbol:'UNH',name:'UNH',type:'usd'},
+  {symbol:'LLY',name:'LLY',type:'usd'},
+  {symbol:'NEE',name:'NEE',type:'usd'},
+  {symbol:'VST',name:'VST',type:'usd'},
+  {symbol:'VUG',name:'VUG',type:'usd'},
+  {symbol:'438080',name:'ACE S&P500혼합',type:'krw'},
+  {symbol:'SPYM',name:'SPYM',type:'usd'},
+  {symbol:'WHWK',name:'WHWK',type:'usd'}
+];
+
+function wlLoad(){
+  try{var s=localStorage.getItem(WL_KEY);return s?JSON.parse(s):JSON.parse(JSON.stringify(WL_DEFAULT));}
+  catch(e){return JSON.parse(JSON.stringify(WL_DEFAULT));}
+}
+function wlSave(list){
+  try{localStorage.setItem(WL_KEY,JSON.stringify(list));}catch(e){}
+}
+
+/* ─ 가격 조회 (stock.html과 완전 동일한 방식) ─ */
+
+// fetch with timeout helper
+function wlTF(url, ms, hdrs){
+  var c=new AbortController();
+  var t=setTimeout(function(){c.abort();},ms);
+  return fetch(url,{signal:c.signal,headers:hdrs||{"User-Agent":"Mozilla/5.0"}})
+    .then(function(r){
+      clearTimeout(t);
+      if(!r.ok)throw new Error(r.status);
+      return r.text();
+    })
+    .then(function(txt){
+      if(!txt||txt.startsWith('<')||txt.startsWith('<!'))throw new Error('html');
+      return JSON.parse(txt);
+    })
+    .catch(function(e){clearTimeout(t);throw e;});
+}
+
+// v8 chart 파싱 (allorigins /get → contents 필드 or 직접)
+function wlPV8(raw){
+  try{
+    var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
+    var m=d&&d.chart&&d.chart.result&&d.chart.result[0]&&d.chart.result[0].meta;
+    if(m&&m.regularMarketPrice&&m.regularMarketPrice>0)
+      return{price:m.regularMarketPrice,prev:m.chartPreviousClose||m.regularMarketPrice,currency:m.currency||'KRW'};
+  }catch(e){}
+  return null;
+}
+// v7 quote 파싱
+function wlPV7(raw){
+  try{
+    var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
+    var q=d&&d.quoteResponse&&d.quoteResponse.result&&d.quoteResponse.result[0];
+    if(q&&q.regularMarketPrice&&q.regularMarketPrice>0)
+      return{price:q.regularMarketPrice,prev:q.regularMarketPreviousClose||q.regularMarketPrice,currency:q.currency||'KRW'};
+  }catch(e){}
+  return null;
+}
+
+// 단일 티커 조회 — stock.html과 동일한 12개 프록시 병렬 + Promise.any + retry
+async function wlFetchOneTicker(tk){
+  var yUrl1='https://query1.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
+  var yUrl2='https://query2.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
+  var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
+  var qUrl2='https://query2.finance.yahoo.com/v7/finance/quote?symbols='+tk;
+
+  var sources=[
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?'+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?'+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_wl'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+  ];
+
+  // Promise.any polyfill (stock.html 동일)
+  var pAny=typeof Promise.any==='function'?Promise.any:function(arr){
+    return new Promise(function(res,rej){
+      var errs=[],left=arr.length;
+      if(!left){rej(new Error('empty'));return;}
+      arr.forEach(function(p){Promise.resolve(p).then(res).catch(function(e){errs.push(e);if(--left===0)rej(errs);});});
+    });
+  };
+
+  try{
+    return await pAny(sources);
+  }catch(e){
+    // 1차 실패 → 2초 후 allorigins만 재시도
+    await new Promise(function(res){setTimeout(res,2000);});
+    try{
+      return await pAny([
+        wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+        wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),10000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+      ]);
+    }catch(e2){return null;}
+  }
+}
+
+async function wlFetchPrices(list){
+  if(_wlLoading)return;
+  _wlLoading=true;
+  var updEl=document.getElementById('wlUpdatedAt');
+  if(updEl)updEl.textContent='갱신 중...';
+  try{
+    // 1. 환율 — Google Apps Script (stock.html과 동일 URL, 동일 방식)
+    try{
+      var c=new AbortController(),t=setTimeout(function(){c.abort();},10000);
+      var res=await fetch(WL_FX_URL,{signal:c.signal});
+      clearTimeout(t);
+      var fxData=await res.json();
+      if(fxData&&fxData.rate&&fxData.rate>500&&fxData.rate<5000)
+        _wlPrices['USDKRW']={price:fxData.rate,pct:null,currency:'fx'};
+    }catch(e){}
+
+    // 2. 주식/ETF — 모든 종목 완전 병렬 (stock.html Promise.allSettled 방식)
+    var stockItems=list.filter(function(i){return i.type==='usd'||i.type==='krw';});
+    await Promise.allSettled(stockItems.map(async function(item){
+      var tk=(item.type==='krw')?(item.symbol+'.KS'):item.symbol;
+      var result=await wlFetchOneTicker(tk);
+      if(result){
+        var pct=result.prev>0?((result.price-result.prev)/result.prev*100):0;
+        _wlPrices[item.symbol]={price:result.price,pct:pct,currency:item.type,prev:result.prev};
+        wlRender(); // ★ 결과 오는 순서대로 즉시 화면 반영 (stock.html 방식)
+      }
+    }));
+
+    var now=new Date();
+    var hh=now.getHours(),mm=String(now.getMinutes()).padStart(2,'0');
+    var ampm=hh>=12?'PM':'AM';
+    hh=hh%12||12;
+    if(updEl)updEl.textContent='Updated '+hh+':'+mm+ampm;
+  }finally{
+    _wlLoading=false;
+  }
+  wlRender();
+}
+
+/* ─ 렌더링 ─ */
+function wlRender(){
+  var list=wlLoad();
+  var grid=document.getElementById('watchlistGrid');
+  if(!grid)return;
+  grid.innerHTML='';
+  list.forEach(function(item,idx){
+    var p=_wlPrices[item.symbol];
+    var priceStr='--',pctStr='',pctClass='wl-flat',arrowChar='';
+    if(p){
+      if(item.type==='fx'){
+        priceStr=p.price.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2});
+        if(p.pct!=null){
+          pctClass=p.pct>0?'wl-up':p.pct<0?'wl-dn':'wl-flat';
+          arrowChar=p.pct>0?'▲':p.pct<0?'▼':'';
+          pctStr=(p.pct>0?'+':'')+p.pct.toFixed(2)+'%';
+        }
+      } else if(item.type==='krw'){
+        priceStr='₩'+Math.round(p.price).toLocaleString('ko-KR');
+        pctClass=p.pct>0?'wl-up':p.pct<0?'wl-dn':'wl-flat';
+        arrowChar=p.pct>0?'▲':p.pct<0?'▼':'';
+        pctStr=(p.pct>0?'+':'')+p.pct.toFixed(2)+'%';
+      } else {
+        priceStr='$'+p.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        pctClass=p.pct>0?'wl-up':p.pct<0?'wl-dn':'wl-flat';
+        arrowChar=p.pct>0?'▲':p.pct<0?'▼':'';
+        pctStr=(p.pct>0?'+':'')+p.pct.toFixed(2)+'%';
+      }
+    }
+    var card=document.createElement('div');
+    card.className='wl-card';
+    card.dataset.idx=idx;
+    card.draggable=true;
+    card.innerHTML=
+      '<div class="wl-price">'+priceStr+'</div>'+
+      '<div class="wl-name">'+item.name+'</div>'+
+      (pctStr?'<div class="wl-pct '+pctClass+'"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat">--</div>');
+    // drag events
+    card.addEventListener('dragstart',function(e){_wlDragSrc=idx;card.classList.add('dragging');});
+    card.addEventListener('dragend',function(){card.classList.remove('dragging');document.querySelectorAll('.wl-card').forEach(function(c){c.classList.remove('drag-over');});});
+    card.addEventListener('dragover',function(e){e.preventDefault();card.classList.add('drag-over');});
+    card.addEventListener('dragleave',function(){card.classList.remove('drag-over');});
+    card.addEventListener('drop',function(e){
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if(_wlDragSrc===null||_wlDragSrc===idx)return;
+      var lst=wlLoad();
+      var moved=lst.splice(_wlDragSrc,1)[0];
+      lst.splice(idx,0,moved);
+      wlSave(lst);
+      wlRender();
+      _wlDragSrc=null;
+    });
+    grid.appendChild(card);
+  });
+  if(list.length===0){
+    grid.innerHTML='<div style="grid-column:span 2;text-align:center;padding:20px;color:#9ca3af;font-size:13px;">종목을 추가해주세요</div>';
+  }
+}
+
+function wlRefresh(){
+  var list=wlLoad();
+  wlRender();
+  wlFetchPrices(list);
+}
+
+/* ─ 편집 ─ */
+function wlOpenEdit(){
+  var modal=document.getElementById('wlModal');
+  if(modal)modal.classList.add('show');
+  wlRenderEditList();
+}
+function wlCloseEdit(){
+  var modal=document.getElementById('wlModal');
+  if(modal)modal.classList.remove('show');
+  wlRender();
+}
+function wlRenderEditList(){
+  var list=wlLoad();
+  var el=document.getElementById('wlEditList');
+  if(!el)return;
+  el.innerHTML='';
+  list.forEach(function(item,idx){
+    var row=document.createElement('div');
+    row.className='wl-edit-row';
+    row.innerHTML=
+      '<span class="wl-drag-handle" draggable="true">☰</span>'+
+      '<span style="flex:1;font-size:13px;font-weight:700;color:#111827;">'+item.name+'</span>'+
+      '<span style="font-size:11px;color:#9ca3af;margin-right:8px;font-family:monospace;">'+item.symbol+'</span>'+
+      '<button data-idx="'+idx+'" onclick="wlDeleteItem('+idx+')" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer;">삭제</button>';
+    row.dataset.idx=idx;
+    row.draggable=true;
+    row.addEventListener('dragstart',function(e){_wlDragSrc=idx;row.style.opacity='.4';});
+    row.addEventListener('dragend',function(){row.style.opacity='1';});
+    row.addEventListener('dragover',function(e){e.preventDefault();row.style.background='#eff6ff';});
+    row.addEventListener('dragleave',function(){row.style.background='';});
+    row.addEventListener('drop',function(e){
+      e.preventDefault();row.style.background='';
+      if(_wlDragSrc===null||_wlDragSrc===idx)return;
+      var lst=wlLoad();
+      var moved=lst.splice(_wlDragSrc,1)[0];
+      lst.splice(idx,0,moved);
+      wlSave(lst);wlRenderEditList();_wlDragSrc=null;
+    });
+    el.appendChild(row);
+  });
+}
+function wlDeleteItem(idx){
+  var list=wlLoad();
+  list.splice(idx,1);
+  wlSave(list);
+  wlRenderEditList();
+}
+function wlAddItem(){
+  var sym=(document.getElementById('wlAddSymbol').value||'').trim().toUpperCase();
+  var name=(document.getElementById('wlAddName').value||'').trim();
+  var type=document.getElementById('wlAddType').value;
+  if(!sym){alert('티커를 입력해주세요');return;}
+  if(!name)name=sym;
+  var list=wlLoad();
+  // 중복 체크
+  if(list.find(function(i){return i.symbol===sym;})){alert('이미 추가된 종목입니다');return;}
+  list.push({symbol:sym,name:name,type:type});
+  wlSave(list);
+  document.getElementById('wlAddSymbol').value='';
+  document.getElementById('wlAddName').value='';
+  wlRenderEditList();
+  wlFetchPrices(list);
+}
+
+// 잠금화면 swipe-up to dismiss watchlist, swipe-down to show
+(function(){
+  var panel=null,startY=0,startH=0,isDragging=false;
+  document.addEventListener('DOMContentLoaded',function(){
+    panel=document.getElementById('watchlistPanel');
+    var handle=document.getElementById('watchlistHandle');
+    if(!handle||!panel)return;
+    handle.addEventListener('touchstart',function(e){startY=e.touches[0].clientY;isDragging=true;},{ passive:true });
+    document.addEventListener('touchmove',function(e){
+      if(!isDragging)return;
+      var dy=e.touches[0].clientY-startY;
+      if(dy>0)panel.style.transform='translateX(-50%) translateY('+Math.min(dy,200)+'px)';
+    },{ passive:true });
+    document.addEventListener('touchend',function(e){
+      if(!isDragging)return;
+      isDragging=false;
+      var dy=e.changedTouches[0].clientY-startY;
+      if(dy>80){panel.classList.add('hidden');panel.style.transform='';}
+      else{panel.style.transform='';}
+    },{ passive:true });
+  });
+})();
 
 /* ════ 시작 ════ */
 function startApp(){
@@ -1018,6 +1403,9 @@ function startApp(){
   if(!getPin()){document.getElementById('pinSetup').classList.add('show');}
   else{
     document.getElementById('lockScreen').classList.add('show');
+    // ★ Watchlist 표시
+    var wlp=document.getElementById('watchlistPanel');
+    if(wlp){wlp.classList.remove('hidden');wlRefresh();}
     if(hasBio())setSt('버튼으로 지문 잠금해제','');
     else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
     if(!bioOk())document.getElementById('bioRegBtn').style.display='none';
