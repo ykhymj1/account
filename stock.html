@@ -497,12 +497,15 @@ const calcFund=h=>{
 // - 누적 이자(pnl/yearInterest): 매년 1월 1일 ~ 12월 31일 기준 연간 누적 이자만 표시
 // - 원금 수정 시에는 adjustments 히스토리를 사용해 입금 원금이 이자에 포함되지 않도록 처리
 const calcCMA=h=>{
-  const currentPrincipal=parseFloat(h.principal)||0;
+  // ★★ 새 방식: principal = 사용자가 입력한 현재 잔액 (원금+이자 합산)
+  // current = principal 그대로, 이자는 startDate(=마지막 수정일)부터 오늘까지 계산
+  // savedYearInterest = 이전 수정 시점까지 쌓인 올해 누적이자 (보존값)
+  const balance=parseFloat(h.principal)||0;
   const rate=parseFloat(h.rate)||0;
   const start=parseDate(h.startDate);
   if(!rate||!start)return null;
-  // ★ 원금이 0이어도 누적이자 보존
-  if(!currentPrincipal){
+  // 원금(잔액) 0이어도 누적이자 보존
+  if(!balance){
     const savedYear=parseFloat(h.savedYearInterest)||parseFloat(h.yearInterest)||parseFloat(h.pnl)||0;
     const savedTotal=parseFloat(h.savedTotalInterest)||parseFloat(h.totalInterest)||0;
     return{principal:0,invested:0,current:0,pnl:savedYear,yearInterest:savedYear,
@@ -516,53 +519,44 @@ const calcCMA=h=>{
 
   const daysBetween=(from,to)=>Math.max(0,Math.floor((to-from)/86400000));
   const yearStart=new Date(today.getFullYear(),0,1);
-  const dailyInterest=currentPrincipal*(rate/100)/365;
 
-  let principal=parseFloat(h.basePrincipal||h.principal)||0;
-  let segmentStart=startDay;
-  let totalInterest=0;
-  let yearInterest=0;
+  // 일이자: 현재 잔액 기준
+  const dailyInterest=balance*(rate/100)/365;
+  // startDate부터 오늘까지 경과일
+  const days=daysBetween(startDay,today);
 
-  const adjustments=(Array.isArray(h.adjustments)?h.adjustments:[])
-    .map(a=>({date:parseDate(a?.date),principal:parseFloat(a?.principal)||0}))
-    .filter(a=>a.date&&a.principal>0)
-    .sort((a,b)=>a.date-b.date);
-
-  const pushInterest=(from,to,p)=>{
-    if(!from||!to||!(p>0)||to<=from)return;
-    const segDays=daysBetween(from,to);
-    if(segDays<=0)return;
-    totalInterest+=p*(rate/100)*(segDays/365);
-    const yFrom=from<yearStart?yearStart:from;
-    if(to>yFrom){
-      const yDays=daysBetween(yFrom,to);
-      if(yDays>0)yearInterest+=p*(rate/100)*(yDays/365);
+  // 오늘까지 새로 쌓인 이자 (startDate ~ today)
+  let newTotalInterest=0;
+  let newYearInterest=0;
+  if(days>0&&balance>0){
+    newTotalInterest=balance*(rate/100)*(days/365);
+    const yFrom=startDay<yearStart?yearStart:startDay;
+    if(today>yFrom){
+      const yDays=daysBetween(yFrom,today);
+      if(yDays>0)newYearInterest=balance*(rate/100)*(yDays/365);
     }
-  };
+  }
 
-  adjustments.forEach(adj=>{
-    const adjDate=new Date(adj.date);
-    adjDate.setHours(0,0,0,0);
-    if(adjDate<=segmentStart||adjDate>today)return;
-    pushInterest(segmentStart,adjDate,principal);
-    principal=adj.principal;
-    segmentStart=adjDate;
-  });
+  // 이전 수정 시점까지 보존된 올해 누적이자
+  const savedYear=parseFloat(h.savedYearInterest)||0;
+  const savedTotal=parseFloat(h.savedTotalInterest)||0;
 
-  pushInterest(segmentStart,today,principal);
+  const yearInterest=savedYear+newYearInterest;
+  const totalInterest=savedTotal+newTotalInterest;
 
-  const totalDays=daysBetween(startDay,today);
-  const current=principal+totalInterest;
+  // current = 입력한 잔액 그대로 (이미 이자 포함된 금액)
+  const current=balance;
+
   return {
-    principal,
-    invested:principal,
+    principal:balance,
+    invested:balance,
     current,
     pnl:yearInterest,
     yearInterest,
     totalInterest,
-    pct:principal>0?(yearInterest/principal)*100:0,
-    totalPct:principal>0?(totalInterest/principal)*100:0,
-    days:totalDays,
+    pct:balance>0?(yearInterest/balance)*100:0,
+    totalPct:balance>0?(totalInterest/balance)*100:0,
+    days,
     dailyInterest
   };
 };
@@ -934,13 +928,13 @@ const FormModal=memo(function FormModal({show,form,setForm,editIdx,mAcct,prices,
       </div>
       <div><Lbl t="CMA 상품명 *"/><ModalInput style={INP} placeholder="예: 한국투자 CMA RP형" value={form.name||""} onChange={e=>sf("name",e.target.value)}/></div>
       <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}><Lbl t="현재 원금 (원)"/><ModalInput style={INP} type="number" inputMode="numeric" placeholder="0" value={form.principal||""} onChange={e=>sf("principal",e.target.value)}/></div>
+        <div style={{flex:1}}><Lbl t="현재 잔액 (원, 원금+이자 합산)"/><ModalInput style={INP} type="text" inputMode="numeric" placeholder="0" value={form.principalDisplay||(form.principal?Number(form.principal).toLocaleString("ko-KR"):"")} onChange={e=>{const raw=e.target.value.replace(/,/g,"");if(raw===""||/^\d+$/.test(raw)){sf("principal",raw);sf("principalDisplay",raw?Number(raw).toLocaleString("ko-KR"):"");}}}/></div>
         <div style={{flex:1}}><Lbl t="연이율 (%)"/><ModalInput style={INP} type="number" inputMode="decimal" step="0.01" placeholder="예: 3.2" value={form.rate||""} onChange={e=>sf("rate",e.target.value)}/></div>
       </div>
       <div><Lbl t="기산일 (이자 계산 시작일)"/><ModalInput style={INP} type="date" value={form.startDate||""} onChange={e=>sf("startDate",e.target.value)}/></div>
       {(()=>{const c=calcCMA({principal:form.principal,basePrincipal:form.basePrincipal,adjustments:form.adjustments,rate:form.rate,startDate:form.startDate});if(!c)return null;return(
         <div style={{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.border}`}}>
-          <div style={{fontSize:12,color:C.muted,marginBottom:8}}>📊 오늘 기준 자동계산 ({c.days}일 경과)</div>
+          <div style={{fontSize:12,color:C.muted,marginBottom:8}}>📊 오늘 기준 자동계산 (마지막 수정 후 {c.days}일 경과)</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div><div style={{fontSize:11,color:C.muted,marginBottom:3}}>현재 평가금액</div><div style={{fontSize:15,fontWeight:800,color:C.text}}>{won(c.current)}</div></div>
             <div><div style={{fontSize:11,color:C.muted,marginBottom:3}}>올해 누적이자 (1/1~12/31)</div><div style={{fontSize:15,fontWeight:800,color:C.accent}}>+{won(c.yearInterest)}</div></div>
@@ -950,7 +944,7 @@ const FormModal=memo(function FormModal({show,form,setForm,editIdx,mAcct,prices,
         </div>
       );})()}
       <div style={{background:"#e0f7fe",borderRadius:10,padding:12,border:"1px solid #67e8f9",fontSize:12,color:C.muted}}>
-        💡 CMA 잔액이 바뀌면 <b style={{color:C.text}}>원금만 수정</b>하세요. 입금 원금은 adjustments로 기록되어 이자에 포함되지 않고, 누적 이자는 매년 1월 1일부터 다시 계산됩니다.
+        💡 CMA 앱 잔액이 바뀌면 <b style={{color:C.text}}>현재 잔액을 수정</b>하세요. 입력한 잔액을 기준으로 다음날부터 이자가 새로 계산되고, 올해 누적이자에 자동으로 더해집니다.
       </div>
       <div><Lbl t="메모 (선택)"/><ModalInput style={INP} placeholder="증권사, 상품명 등" value={form.memo||""} onChange={e=>sf("memo",e.target.value)}/></div>
     </>);
@@ -1814,7 +1808,7 @@ function App(){
 
   const openEdit=useCallback((aid,idx)=>{
     const h=holdings[aid][idx];
-    setForm({...h,_acctId:aid});
+    setForm({...h,_acctId:aid,principalDisplay:h.principal?Number(h.principal).toLocaleString("ko-KR"):""});
     setEditIdx(idx);
     setModal("holding");
     // ★ 모달 열자마자 해당 종목 시세 즉시 조회
@@ -1832,39 +1826,37 @@ function App(){
     }
     else if(form.assetType==="CMA"){
       if(!form.startDate){showToast("기산일을 입력해주세요.","error");return;}
-      if(form.principal===""||form.principal===null||form.principal===undefined){showToast("원금을 입력해주세요.","error");return;}
-      const principalNum=parseFloat(form.principal)||0;
+      if(form.principal===""||form.principal===null||form.principal===undefined){showToast("잔액을 입력해주세요.","error");return;}
+      const balanceNum=parseFloat(form.principal)||0;
       const todayStr=new Date().toISOString().slice(0,10);
-      let basePrincipal=principalNum;
-      let adjustments=[];
+      // ★★ 새 방식: 입력값 = 현재 잔액(원금+이자 합산)
+      // 잔액이 변경되면 현재까지 누적이자를 보존하고 오늘을 새 기산일로 설정
+      let savedYI=parseFloat(prevEntry?.savedYearInterest)||0;
+      let savedTI=parseFloat(prevEntry?.savedTotalInterest)||0;
+      let newStartDate=form.startDate;
       if(prevEntry&&prevEntry.assetType==="CMA"){
-        const prevPrincipal=parseFloat(prevEntry.principal)||0;
-        const startChanged=(prevEntry.startDate||"")!==(form.startDate||"");
-        basePrincipal=parseFloat(prevEntry.basePrincipal||prevPrincipal)||principalNum;
-        adjustments=Array.isArray(prevEntry.adjustments)?prevEntry.adjustments.filter(a=>a&&a.date&&parseFloat(a.principal)>0):[];
-        if(startChanged){
-          basePrincipal=principalNum;
-          adjustments=[];
-        }else if(Math.abs(prevPrincipal-principalNum)>0.0001){
-          adjustments=[...adjustments,{date:todayStr,principal:principalNum}]
-            .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+        const prevBalance=parseFloat(prevEntry.principal)||0;
+        const balanceChanged=Math.abs(prevBalance-balanceNum)>0.0001;
+        if(balanceChanged){
+          // 현재까지 쌓인 이자를 계산해서 보존
+          const prevCalc=calcCMA(prevEntry);
+          if(prevCalc){
+            savedYI=prevCalc.yearInterest||0;
+            savedTI=prevCalc.totalInterest||0;
+          }
+          // 오늘을 새 기산일로 갱신 (내일부터 새 잔액 기준 이자 시작)
+          newStartDate=todayStr;
         }
       }
-      // ★ 원금 0으로 수정 시 누적이자 보존
-      const prevCalc=prevEntry&&prevEntry.assetType==="CMA"?calcCMA(prevEntry):null;
-      const savedYI=principalNum===0&&prevCalc?(prevCalc.yearInterest||0):undefined;
-      const savedTI=principalNum===0&&prevCalc?(prevCalc.totalInterest||0):undefined;
       entry={
         name:form.name.trim(),
         assetType:"CMA",
-        principal:String(principalNum),
-        basePrincipal:String(basePrincipal),
-        adjustments,
+        principal:String(balanceNum),
         rate:form.rate||"0",
-        startDate:form.startDate,
+        startDate:newStartDate,
         memo:form.memo||"",
-        ...(savedYI!==undefined?{savedYearInterest:savedYI}:{}),
-        ...(savedTI!==undefined?{savedTotalInterest:savedTI}:{})
+        savedYearInterest:savedYI,
+        savedTotalInterest:savedTI
       };
     }
     else if(form.assetType==="적금"){
@@ -2191,11 +2183,11 @@ function App(){
                   {curAcct.pensionHint&&<div style={{fontSize:12,color:C.sub,lineHeight:1.6}}>국내ETF: 티커+수량+평균단가 → 자동시세 | 펀드: 기준가+보유좌수 → 자동계산</div>}
                   {curAcct.shared?(
                     <div style={{marginTop:2}}>
-                      <div style={{fontSize:12,color:C.muted}}>{curAcct.cmaType?`전체 원금 ${won(curData.invested)}`:`AMT 투자원금 ${won(curData.invested)}`}</div>
+                      <div style={{fontSize:12,color:C.muted}}>{curAcct.cmaType?`전체 잔액 ${won(curData.invested)}`:`AMT 투자원금 ${won(curData.invested)}`}</div>
                       <div style={{fontSize:12,marginTop:1}}>{curAcct.cmaType?<><span style={{color:C.text}}>내 지분 1/2</span> <span style={{color:C.green}}>{won(curData.invested*0.5)}</span></>:<><span style={{color:C.text}}>내 투자원금</span> <span style={{color:C.green}}>{won(curData.invested*0.5)}</span></>}</div>
                     </div>
                   ):(
-                    <div style={{fontSize:12,color:C.muted,marginTop:4}}>투자원금 {won(curData.invested)}</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:4}}>{curAcct.cmaType?"현재 잔액":"투자원금"} {won(curData.invested)}</div>
                   )}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -2244,7 +2236,7 @@ function App(){
                     <div style={{fontSize:15,fontWeight:800,color:C.text,lineHeight:1.4}}>
                       {h.name}
                       {(h.qty&&parseFloat(h.qty)>0)&&<span style={{fontSize:12,color:C.muted,fontWeight:400,marginLeft:6}}>({nf(parseFloat(h.qty))}{h.assetType==="펀드"||h.assetType==="국내ETF"?"좌":"주"})</span>}
-                      {(h.assetType==="CMA"||h.assetType==="적금")&&h.principal&&<span style={{fontSize:12,color:C.muted,fontWeight:400,marginLeft:6}}>({won(h.principal)})</span>}
+                      {h.assetType==="적금"&&h.principal&&<span style={{fontSize:12,color:C.muted,fontWeight:400,marginLeft:6}}>({won(h.principal)})</span>}
                     </div>
                     <div style={{fontSize:12,color:C.muted,marginTop:4,display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
                       <span style={{background:"#eff6ff",border:"1px solid #bfdbfe",padding:"2px 8px",borderRadius:5,color:"#1d4ed8",fontWeight:700}}>{h.assetType}</span>
