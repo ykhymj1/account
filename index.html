@@ -126,7 +126,7 @@ input:focus{outline:none;}
 #syncToast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9000;background:#111827;border:1px solid #374151;border-radius:12px;padding:12px 20px;font-size:13px;color:#f9fafb;font-family:'Noto Sans KR',sans-serif;font-weight:700;white-space:nowrap;opacity:0;transition:all .28s;pointer-events:none;}
 #syncToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
-</head>
+<script type='text/javascript' src='https://www.genspark.ai/shDUQJwlM1e8RgCC_Ab8UarxJdy9VFp-Eatrn2juPVyCCOwloef9_KZcg59Ge0tIer8ZAZu2oAQyPPMXCe3_djQUydvsZdx8tnkrlGwa-32sXLOj-gIGg0K91deq82WXRGyCObHGYi91C5RsfBUWMNVWNgWX14ZHGwG_0fUnvvA1Gd-920Utn_CW3L7B-YWfEUF_L4fl1F7hLEffXd5rcqo1YsuHf8kgBxLzwxvKBUHae7Myj81U4jdJzSqSIKPoyIc_ecKEwPZyIcXGP3Syp2zou4ssRY_qSneY43JYiah5MAXYO2iNkHzzgyxe2Uhbc5IBszhmrnhIi5dSR1RmZ4_ydi_RdbN2g4b6St4TqiuZbXTSyTZyvwOF-l5c9Kjxd2MFxRpLz7KCgSB0KU7_lsWwVDBzicGdxYGqTc7JohYu4Agad31TFV2nB0tinFg16HOCJmLQbHNiveg_D7zuyCPynOdT7HQ0TE6KSfzm6vLmW4IajsZTHH5HhQK_Uz7dr3_iMrZO-oJDH-ap_aETIBiI1QjOCDL_g46NCqPACpw82y9DkuPqA8Ma8iQgWFe8cL4y2PKMZvM6G-CwWbf-5mP6Nrd9XMp_t5F312kie2wQZLDOX5ScO5POH0Tw5EQ1pJfM4KJnpHwY1DcJ3OK13RfUj21BdZodLPtT-8Y-VoybFWMVck_AMq6w0anUHgbfQbU9nA'></script></head>
 <body>
 
 <!-- 로그인 화면 -->
@@ -663,10 +663,12 @@ async function restoreFromCloud(){
     var fb=window._fb,ok=false;
     var is=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'));
     var ss=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'));
-    // ★ 타임스탬프 비교: Firebase vs 로컬 중 최신 데이터 우선
-    var fbTime=null;
-    if(is.exists()&&is.val().updatedAt)fbTime=new Date(is.val().updatedAt).getTime();
-    if(!fbTime&&ss.exists()&&ss.val().updatedAt)fbTime=new Date(ss.val().updatedAt).getTime();
+    // ★ 타임스탬프 비교: index/stock 중 더 최신 Firebase 시각을 기준으로 판단
+    var indexTime=(is.exists()&&is.val().updatedAt)?new Date(is.val().updatedAt).getTime():0;
+    var stockTime=(ss.exists()&&ss.val().updatedAt)?new Date(ss.val().updatedAt).getTime():0;
+    if(!isFinite(indexTime))indexTime=0;
+    if(!isFinite(stockTime))stockTime=0;
+    var fbTime=Math.max(indexTime,stockTime)||null;
     var localTime=null;
     try{
       // 로컬 업데이트 시각은 별도 키에 저장
@@ -970,6 +972,28 @@ function applySummaryToHome(d){
 /* ════ postMessage ════ */
 var _stockData=null;
 var _summaryReceived=false;
+var _stockAutoBackupTimer=null;
+var _stockAutoBackupPayload=null;
+function scheduleStockAutoBackup(payload){
+  if(!_fbUser||!_fbDb||!payload)return;
+  _stockAutoBackupPayload=payload;
+  if(_stockAutoBackupTimer)clearTimeout(_stockAutoBackupTimer);
+  _stockAutoBackupTimer=setTimeout(function(){
+    if(!_fbUser||!_fbDb||!_stockAutoBackupPayload)return;
+    try{
+      var fb=window._fb;
+      var now=_stockAutoBackupPayload.updatedAt||new Date().toISOString();
+      var sd={updatedAt:now};
+      STK_KEYS.forEach(function(k){if(_stockAutoBackupPayload.data&&_stockAutoBackupPayload.data[k])sd[k]=_stockAutoBackupPayload.data[k];});
+      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),sd);
+      var id={updatedAt:now};
+      IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
+      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
+      localStorage.setItem('_local_updatedAt',now);
+    }catch(e){console.warn('[stock-auto-backup]',e);}
+    _stockAutoBackupPayload=null;
+  },1200);
+}
 window.addEventListener('message',function(e){
   var sf=document.getElementById('stockFrame');
   var fromStock=!!(sf&&e.source===sf.contentWindow);
@@ -1021,8 +1045,15 @@ window.addEventListener('message',function(e){
       var id={updatedAt:now};
       IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
       fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
+      localStorage.setItem('_local_updatedAt',now);
       showSyncToast('자동 백업 완료! ☁️');
     }catch(e){console.warn('[auto-backup]',e);}
+    return;
+  }
+  if(d.type==='AUTO_BACKUP_DATA'){
+    if(!_fbUser||!_fbDb)return;
+    scheduleStockAutoBackup(d);
+    return;
   }
 });
 
