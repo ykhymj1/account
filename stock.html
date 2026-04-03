@@ -1895,6 +1895,26 @@ function App(){
         try{window.parent.postMessage({type:"BACKUP_DATA",data},'*');}catch(err){}
         return;
       }
+      // ★ 부모(index.html)가 Firebase 복원 후 데이터 갱신 요청
+      if(d.type==="RELOAD_DATA"){
+        const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
+        // 부모가 보내준 데이터를 localStorage에 저장
+        if(d.data){
+          keys.forEach(k=>{if(d.data[k]){try{localStorage.setItem(k,d.data[k]);}catch(e){}}});
+        }
+        // React 상태 갱신: 저장된 데이터로 holdings 다시 로드
+        try{
+          const stored=localStorage.getItem("pf_v4");
+          if(stored){
+            const parsed=JSON.parse(stored);
+            if(parsed&&parsed.holdings){
+              setHoldings(parsed.holdings);
+              holdingsRef.current=parsed.holdings;
+            }
+          }
+        }catch(e){console.warn('[RELOAD_DATA]',e);}
+        return;
+      }
       if(d.type==="OPEN_CMA_ACCOUNT"){
         cmaReturnContext.current={active:true,accountId:d.accountId||"mycma",action:d.type};
         setTab("accounts");
