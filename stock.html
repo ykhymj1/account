@@ -378,42 +378,17 @@ async function backup() {
 const _orig = localStorage.setItem.bind(localStorage);
 // ★ 복원 중 플래그: index.html이 RELOAD_DATA로 복원할 때 자동백업 차단
 let _restoring = false;
-const IN_IFRAME = window.self !== window.top;
-let _parentSyncTimer = null;
-function notifyParentAutoBackup(force) {
-  if (!IN_IFRAME || !window.parent || (_restoring && !force)) return;
-  try {
-    const data = {};
-    KEYS.forEach(k => {
-      const v = localStorage.getItem(k);
-      if (v) data[k] = v;
-    });
-    window.parent.postMessage({
-      type: "AUTO_BACKUP_DATA",
-      data,
-      updatedAt: new Date().toISOString()
-    }, '*');
-  } catch(e) {}
-}
 localStorage.setItem = function(k, v) {
   _orig(k, v);
   // 복원 중이거나 KEYS에 없으면 자동백업 안 함
-  if (KEYS.includes(k) && !_restoring) {
-    if (_uid) {
-      clearTimeout(_timer);
-      _timer = setTimeout(backup, 2000);
-    }
-    clearTimeout(_parentSyncTimer);
-    _parentSyncTimer = setTimeout(() => notifyParentAutoBackup(false), 800);
+  if (KEYS.includes(k) && _uid && !_restoring) {
+    clearTimeout(_timer);
+    _timer = setTimeout(backup, 2000);
   }
 };
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    if (IN_IFRAME) {
-      badge("부모 페이지 동기화 사용");
-      return;
-    }
     badge("Google 로그인 중...");
     autoGoogleLogin();
     return;
