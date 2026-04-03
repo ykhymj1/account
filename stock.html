@@ -402,18 +402,30 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const snap = await get(ref(db, "users/" + _uid + "/apps/stock"));
     const local = localStorage.getItem("pf_v4");
-    const isEmpty = !local || local === '{"holdings":{},"fxRate":1360}';
+    // ★ BUG FIX: isEmpty 판단을 더 정확하게 — pf_v4가 없거나 holdings가 빈 객체인 경우
+    let isEmpty = !local;
+    if (!isEmpty) {
+      try {
+        const parsed = JSON.parse(local);
+        isEmpty = !parsed || !parsed.holdings || Object.keys(parsed.holdings).length === 0;
+      } catch(e) { isEmpty = true; }
+    }
     if (snap.exists() && snap.val()["pf_v4"] && isEmpty) {
       // 로컬이 완전히 비어있을 때만 Firebase에서 복원
       _restoring = true;
       const data = snap.val();
       KEYS.forEach(k => { if(data[k]) _orig(k, data[k]); });
+      // ★ BUG FIX: 복원 후 _local_updatedAt도 갱신
+      if(data.updatedAt){ try{_orig('_local_updatedAt', data.updatedAt);}catch(e){} }
       _restoring = false;
       badge("데이터 복원됨 🔄");
       setTimeout(() => location.reload(), 1200);
     } else {
       // 로컬에 데이터 있음 → index.html이 동기화 담당, stock은 백업만
-      setTimeout(backup, 1500);
+      // ★ BUG FIX: index.html이 2초 후 restoreFromCloud() 실행 → RELOAD_DATA를 보낼 수 있음
+      // stock이 1.5초에 먼저 backup()하면 Firebase 타임스탬프가 갱신되어 비교 오작동
+      // → 5초로 늦춰서 index.html 동기화 판단 완료 후 백업 (RELOAD_DATA 수신 시 _timer 클리어됨)
+      setTimeout(backup, 5000);
     }
   } catch(e) {
     badge("동기화 오류", 'err');
@@ -1906,9 +1918,19 @@ function App(){
         _restoring=false;
         clearTimeout(_timer);
         try{
+          // ★ BUG FIX: pf_v4만 React state 반영하던 것을 history, acctOrder도 함께 반영
           const stored=localStorage.getItem("pf_v4");
           if(stored){const parsed=JSON.parse(stored);if(parsed&&parsed.holdings){setHoldings(parsed.holdings);holdingsRef.current=parsed.holdings;}}
-        }catch(e){console.warn('[RELOAD_DATA]',e);}
+        }catch(e){console.warn('[RELOAD_DATA] pf_v4',e);}
+        try{
+          const storedHist=localStorage.getItem("pf_history_v1");
+          if(storedHist){const parsed=JSON.parse(storedHist);if(parsed&&typeof parsed==='object')setHistory({...parsed});}
+        }catch(e){console.warn('[RELOAD_DATA] pf_history_v1',e);}
+        try{
+          const storedAcct=localStorage.getItem("pf_acct_order");
+          if(storedAcct){const parsed=JSON.parse(storedAcct);if(Array.isArray(parsed)&&parsed.length===ACCOUNTS.length)setAcctOrder([...parsed]);}
+        }catch(e){console.warn('[RELOAD_DATA] pf_acct_order',e);}
+        // pf_item_order는 localStorage에서 직접 읽으므로 별도 state 반영 불필요
         return;
       }
       if(d.type==="OPEN_CMA_ACCOUNT"){

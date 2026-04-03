@@ -472,8 +472,21 @@ async function initFirebase(){
           } else if(result&&result.ok){
             // Firebase가 더 최신 → stock iframe에 새 데이터 전달
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
+            // ★ BUG FIX 2: iframe이 아직 마운트 안 됐으면 postMessage 소실됨
+            // _pendingSyncData에 저장 → IFRAME_READY 수신 시 전달
+            window._pendingSyncData=result.stockData||{};
             var sf=document.getElementById('stockFrame');
-            if(sf&&sf.contentWindow)sf.contentWindow.postMessage({type:'RELOAD_DATA',data:result.stockData||{}},'*');
+            if(sf&&sf.contentWindow){
+              try{sf.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');window._pendingSyncData=null;}catch(e){}
+            }
+            // iframe 미준비 시 1.5초 후 재시도 (IFRAME_READY 핸들러에서도 처리)
+            if(window._pendingSyncData){
+              setTimeout(function(){
+                if(!window._pendingSyncData)return;
+                var sf2=document.getElementById('stockFrame');
+                if(sf2&&sf2.contentWindow){try{sf2.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');window._pendingSyncData=null;}catch(e){}}
+              },1500);
+            }
           } else {
             // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드
             await backupToCloud();
@@ -976,6 +989,11 @@ window.addEventListener('message',function(e){
     if(_pendingStockMessage&&sf&&sf.contentWindow){
       var pm=_pendingStockMessage;_pendingStockMessage=null;
       setTimeout(function(){try{sf.contentWindow.postMessage(pm,'*');}catch(e){}},50);
+    }
+    // ★ BUG FIX 2: Firebase 복원 데이터가 pending이면 iframe 준비된 지금 전송
+    if(window._pendingSyncData&&sf&&sf.contentWindow){
+      var psd=window._pendingSyncData;window._pendingSyncData=null;
+      setTimeout(function(){try{sf.contentWindow.postMessage({type:'RELOAD_DATA',data:psd},'*');}catch(e){}},100);
     }
     return;
   }
