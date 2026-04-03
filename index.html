@@ -463,23 +463,27 @@ async function initFirebase(){
         hideLoginScreen();
         startApp();
         // ★ 로그인 시 타임스탬프 비교 후 자동 동기화
+        // ★ stock iframe에 백업 금지 신호 즉시 전송 (동기화 판단 전)
+        var sfEarly=document.getElementById('stockFrame');
+        if(sfEarly&&sfEarly.contentWindow){try{sfEarly.contentWindow.postMessage({type:'FREEZE_BACKUP'},'*');}catch(e){}}
+        window._pendingSyncData=null;
         setTimeout(async function(){
           var result=await restoreFromCloud();
           if(result==='local_newer'){
-            // 로컬이 더 최신 → Firebase에 업로드 (reload 없음)
+            // 로컬이 더 최신 → Firebase에 업로드
+            // stock의 백업 금지 해제
+            var sfUnfreeze=document.getElementById('stockFrame');
+            if(sfUnfreeze&&sfUnfreeze.contentWindow){try{sfUnfreeze.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
             await backupToCloud();
             showSyncToast('☁️ 로컬 데이터 Firebase에 저장 완료!');
           } else if(result&&result.ok){
-            // Firebase가 더 최신 → stock iframe에 새 데이터 전달
+            // Firebase가 더 최신 → stock에 새 데이터 전달 (백업 금지 상태에서)
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
-            // ★ BUG FIX 2: iframe이 아직 마운트 안 됐으면 postMessage 소실됨
-            // _pendingSyncData에 저장 → IFRAME_READY 수신 시 전달
             window._pendingSyncData=result.stockData||{};
             var sf=document.getElementById('stockFrame');
             if(sf&&sf.contentWindow){
               try{sf.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');window._pendingSyncData=null;}catch(e){}
             }
-            // iframe 미준비 시 1.5초 후 재시도 (IFRAME_READY 핸들러에서도 처리)
             if(window._pendingSyncData){
               setTimeout(function(){
                 if(!window._pendingSyncData)return;
@@ -489,6 +493,8 @@ async function initFirebase(){
             }
           } else {
             // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드
+            var sfUnfreeze2=document.getElementById('stockFrame');
+            if(sfUnfreeze2&&sfUnfreeze2.contentWindow){try{sfUnfreeze2.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
             await backupToCloud();
           }
         },2000);
@@ -674,8 +680,11 @@ async function restoreFromCloud(){
       if(lt)localTime=new Date(lt).getTime();
     }catch(e){}
     // Firebase가 더 최신이거나 로컬에 타임스탬프 없을 때만 복원
-    if(fbTime&&localTime&&localTime>fbTime){
-      console.log('[sync] 로컬이 더 최신 → Firebase에 업로드');
+    // ★ localTime이 fbTime보다 5분 초과로 최신일 때만 local_newer 판단
+    // (stock backup()이 먼저 실행되는 경우 등 오차 방지)
+    var FIVE_MIN = 5 * 60 * 1000;
+    if(fbTime&&localTime&&(localTime - fbTime) > FIVE_MIN){
+      console.log('[sync] 로컬이 더 최신 (5분+) → Firebase에 업로드', new Date(localTime), new Date(fbTime));
       return 'local_newer';
     }
     if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
