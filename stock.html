@@ -9,7 +9,7 @@
 <title>내 포트폴리오</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script type='text/javascript' src='https://www.genspark.ai/7xTP3eb1lvDZAvZA7VsovS_ZFphbjYB_K5GILO6yUjlC0Jtb4zog0kVUlCp6TquTYFot6EvnCoTtUGECDMgO0Hg3OKlbFXWjYvBtHkXVgLowcj66S9Z7YX99sGUrowjXXQKPWmBV9SdG8wXeSVTlj9-u_XbM_I6g4n4ZByi2TadMvaeHLqgS9rHPWR3_4Qxmly893IITnQehVEkd3MfMju1ZVbx8_PiaVh6py6uBpH17-DeXYLWTFw2UWqsR7oiuZACiohrkuIx_i7vln6D7WiLX_bT1_NGTQaOyFM1c5rEx7xGFq9J7QJlLTInwyiK7TuJ_cWYQQn4pnC-EbXtp3yHezUwmoe1axLE7KjNm07QvVTKomwXa45LyGVTz4T5LjnOpUAhEPiFAFw65n_znPMLBIeGBR9jPPD4wUrsEsATjsy0_NiWCDagV8qP_euxH0_Txxi0MFZc-Vc8EnYgVo7GTQEhhYxgqAQ8daye_vLkz5BvpODGceWX1ar606Ph0fVRIWTQAz2ZRznYnYRcK7xSggpnJjCscLZEoHuBNNqbtZVtAJk_RRCOKinevn38yNujCTzK_kAOh_dvizNAaj9l4Ao1owkywt1u2oAT9lUwCqYcweKEvuECGROfaX-QX9ttVdvb_UrDi-9hwcPlIEwE61zX4mRjQBFU8GlFWsrC0nmWMyijNZUc1sTmLuw'></script><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
@@ -333,6 +333,26 @@ const db   = getDatabase(app);
 
 const KEYS = ["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
 let _uid = null, _timer = null;
+let _pendingBackupAt = null;
+let _skipFirstEmptySave = !localStorage.getItem("pf_v4");
+
+function parseSyncTime(v){
+  const t = v ? new Date(v).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+function setLocalSyncTime(ts){
+  try{
+    const next = parseSyncTime(ts) || Date.now();
+    const cur = parseSyncTime(localStorage.getItem("_local_updatedAt"));
+    _orig("_local_updatedAt", new Date(Math.max(cur, next)).toISOString());
+  }catch(e){}
+}
+function markLocalDirty(ts){
+  if(_restoring) return;
+  const iso = ts || new Date().toISOString();
+  _pendingBackupAt = iso;
+  setLocalSyncTime(iso);
+}
 
 function badge(msg, color) {
   let b = document.getElementById("_fsb");
@@ -363,12 +383,14 @@ async function autoGoogleLogin() {
   }
 }
 
-async function backup() {
+async function backup(forcedAt) {
   if (!_uid) return;
   try {
-    const data = { updatedAt: new Date().toISOString() };
+    const ts = forcedAt || _pendingBackupAt || localStorage.getItem("_local_updatedAt") || new Date().toISOString();
+    const data = { updatedAt: new Date(parseSyncTime(ts) || Date.now()).toISOString() };
     KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
     await set(ref(db, "users/" + _uid + "/apps/stock"), data);
+    _pendingBackupAt = null;
     badge("백업 완료 ✅");
   } catch(e) {
     console.warn("[Stock] 백업 실패:", e);
@@ -380,7 +402,7 @@ const _orig = localStorage.setItem.bind(localStorage);
 let _restoring = false;
 const IN_IFRAME = window.self !== window.top;
 let _parentSyncTimer = null;
-function notifyParentAutoBackup(force) {
+function notifyParentAutoBackup(force, forcedAt) {
   if (!IN_IFRAME || !window.parent || (_restoring && !force)) return;
   try {
     const data = {};
@@ -388,23 +410,27 @@ function notifyParentAutoBackup(force) {
       const v = localStorage.getItem(k);
       if (v) data[k] = v;
     });
+    const ts = forcedAt || _pendingBackupAt || localStorage.getItem("_local_updatedAt") || new Date().toISOString();
     window.parent.postMessage({
       type: "AUTO_BACKUP_DATA",
       data,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date(parseSyncTime(ts) || Date.now()).toISOString()
     }, '*');
   } catch(e) {}
 }
 localStorage.setItem = function(k, v) {
+  const prev = localStorage.getItem(k);
   _orig(k, v);
-  // 복원 중이거나 KEYS에 없으면 자동백업 안 함
-  if (KEYS.includes(k) && !_restoring) {
+  // 복원 중이거나 KEYS에 없거나 값 변화가 없으면 자동백업 안 함
+  if (KEYS.includes(k) && !_restoring && prev !== String(v)) {
+    const changedAt = new Date().toISOString();
+    markLocalDirty(changedAt);
     if (_uid) {
       clearTimeout(_timer);
-      _timer = setTimeout(backup, 2000);
+      _timer = setTimeout(() => backup(changedAt), 2000);
     }
     clearTimeout(_parentSyncTimer);
-    _parentSyncTimer = setTimeout(() => notifyParentAutoBackup(false), 800);
+    _parentSyncTimer = setTimeout(() => notifyParentAutoBackup(false, changedAt), 800);
   }
 };
 
@@ -1350,7 +1376,14 @@ function App(){
     else if(dx<0&&idx>0)setTab(TABS[idx-1]);
   },[goBackFromCmaContext]); // ★★ fetching 제거 → fetchingRef 사용으로 재생성 차단
 
-  useEffect(()=>{sv(SK,{holdings,fxRate});},[holdings,fxRate]);
+  useEffect(()=>{
+    const hasAnyHoldings = !!Object.values(holdings||{}).find(list=>Array.isArray(list)&&list.length);
+    if(_skipFirstEmptySave){
+      _skipFirstEmptySave = false;
+      if(!hasAnyHoldings)return;
+    }
+    sv(SK,{holdings,fxRate});
+  },[holdings,fxRate]);
 
   // [이하 두 useEffect는 allAccounts/myTotal 정의 이후로 이동됨 - TDZ 버그 수정]
 
@@ -1690,6 +1723,8 @@ function App(){
   // 수익률 스냅샷 저장 - prices 변경될 때마다 (오늘 데이터 즉시 갱신)
   useEffect(()=>{
     if(!allAccounts.length)return;
+    const hasAnyHoldings=!!Object.values(holdings||{}).find(list=>Array.isArray(list)&&list.length);
+    if(!hasAnyHoldings)return;
     const today=new Date().toISOString().slice(0,10);
     if(today<GRAPH_START)return;
     try{
@@ -1931,7 +1966,11 @@ function App(){
         const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
         const data={};
         keys.forEach(k=>{const v=localStorage.getItem(k);if(v)data[k]=v;});
-        try{window.parent.postMessage({type:"BACKUP_DATA",data},'*');}catch(err){}
+        try{window.parent.postMessage({
+          type:"BACKUP_DATA",
+          data,
+          updatedAt: localStorage.getItem("_local_updatedAt") || new Date().toISOString()
+        },'*');}catch(err){}
         return;
       }
       // ★ Firebase 복원 후 데이터 갱신 요청
@@ -1939,8 +1978,10 @@ function App(){
         const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
         // ★ 복원 중 플래그로 자동백업 차단
         _restoring=true;
-        if(d.data){keys.forEach(k=>{if(d.data[k]){try{localStorage.setItem(k,d.data[k]);}catch(e){}}});}
+        if(d.data){keys.forEach(k=>{if(d.data[k]){try{_orig(k,d.data[k]);}catch(e){}}});}
+        if(d.updatedAt){ try{ setLocalSyncTime(d.updatedAt); }catch(e){} }
         _restoring=false;
+        _pendingBackupAt = null;
         clearTimeout(_timer);
         try{
           // ★ BUG FIX: pf_v4만 React state 반영하던 것을 history, acctOrder도 함께 반영
