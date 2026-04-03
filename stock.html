@@ -492,7 +492,11 @@ const pf=n=>{const v=parseFloat(n);if(!isFinite(v)||isNaN(v))return"0.00%";retur
 const usd=n=>{const v=parseFloat(n);return(!isFinite(v)||isNaN(v))?"$0":`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;};
 const nf=n=>(n==null||n===""||isNaN(Number(n)))?"—":Number(n).toLocaleString("ko-KR");
 const ld=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d;}catch(e){return d;}};
-const sv=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}};
+const sv=(k,v)=>{
+  // ★ 복원 중이면 pf_v4 등 주요 키 덮어쓰기 차단 (React useEffect 백업 차단)
+  if(typeof _restoring !== 'undefined' && _restoring && ["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"].includes(k)){return;}
+  try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}
+};
 const parseDate=s=>{if(!s)return null;const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d);};
 const calcSavings=h=>{
   const p=parseFloat(h.principal)||0,r=parseFloat(h.rate)||0,s=parseDate(h.startDate);
@@ -1925,13 +1929,12 @@ function App(){
       // ★ Firebase 복원 후 데이터 갱신 요청
       if(d.type==="RELOAD_DATA"){
         const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
-        // ★ 복원 중 플래그로 자동백업 차단
+        // ★ 복원 중 플래그 ON - React useEffect 백업 차단
         _restoring=true;
-        if(d.data){keys.forEach(k=>{if(d.data[k]){try{_orig(k,d.data[k]);}catch(e){}}});}
-        _restoring=false;
         clearTimeout(_timer);
+        if(d.data){keys.forEach(k=>{if(d.data[k]){try{_orig(k,d.data[k]);}catch(e){}}});}
+        // React state 갱신
         try{
-          // ★ BUG FIX: pf_v4만 React state 반영하던 것을 history, acctOrder도 함께 반영
           const stored=localStorage.getItem("pf_v4");
           if(stored){const parsed=JSON.parse(stored);if(parsed&&parsed.holdings){setHoldings(parsed.holdings);holdingsRef.current=parsed.holdings;}}
         }catch(e){console.warn('[RELOAD_DATA] pf_v4',e);}
@@ -1943,7 +1946,12 @@ function App(){
           const storedAcct=localStorage.getItem("pf_acct_order");
           if(storedAcct){const parsed=JSON.parse(storedAcct);if(Array.isArray(parsed)&&parsed.length===ACCOUNTS.length)setAcctOrder([...parsed]);}
         }catch(e){console.warn('[RELOAD_DATA] pf_acct_order',e);}
-        // pf_item_order는 localStorage에서 직접 읽으므로 별도 state 반영 불필요
+        // ★ React useEffect(holdings 변경→sv()→localStorage훅→backup()) 완전히 끝날 때까지 대기 후 해제
+        // useEffect는 비동기이므로 충분한 시간(3초) 후 _restoring 해제
+        setTimeout(()=>{
+          _restoring=false;
+          clearTimeout(_timer); // 혹시 예약된 backup() 있으면 취소
+        }, 3000);
         return;
       }
       if(d.type==="OPEN_CMA_ACCOUNT"){
