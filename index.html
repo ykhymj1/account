@@ -470,7 +470,7 @@ async function initFirebase(){
             await backupToCloud();
             showSyncToast('☁️ 로컬 데이터 Firebase에 저장 완료!');
           } else if(result&&result.ok){
-            // Firebase가 더 최신 → stock iframe에 새 데이터와 함께 갱신 요청
+            // Firebase가 더 최신 → stock iframe에 새 데이터 전달
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
             var sf=document.getElementById('stockFrame');
             if(sf&&sf.contentWindow)sf.contentWindow.postMessage({type:'RELOAD_DATA',data:result.stockData||{}},'*');
@@ -497,14 +497,10 @@ window.skipLogin=function(){localStorage.setItem('fb_login_skipped','1');hideLog
 /* ════ 클라우드 백업 ════ */
 var IDX_KEYS=['asset_pin','asset_bio_cred'];
 var STK_KEYS=['pf_v4','pf_history_v1','pf_acct_order','pf_item_order'];
-// ★ _local_updatedAt 없으면 현재 시각으로 초기화 (첫 사용 시 로컬 데이터 보호)
+// ★ _local_updatedAt 없으면 아주 오래된 값으로 설정 → Firebase 데이터 항상 우선
 (function(){
   if(!localStorage.getItem('_local_updatedAt')){
-    var hasPf=localStorage.getItem('pf_v4');
-    if(hasPf){
-      // 로컬에 데이터가 있는데 타임스탬프가 없으면 현재 시각으로 설정
-      localStorage.setItem('_local_updatedAt',new Date().toISOString());
-    }
+    localStorage.setItem('_local_updatedAt','2020-01-01T00:00:00.000Z');
   }
 })();
 
@@ -670,10 +666,9 @@ async function restoreFromCloud(){
       return 'local_newer';
     }
     if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
-    // ★ stock 데이터를 localStorage에 저장하고 iframe에도 전달
     var stockData={};
     if(ss.exists())STK_KEYS.forEach(function(k){if(ss.val()[k]){localStorage.setItem(k,ss.val()[k]);stockData[k]=ss.val()[k];ok=true;}});
-    // Firebase 타임스탬프를 로컬에도 저장 (다음 비교 기준)
+    // ★ Firebase 타임스탬프를 로컬에 저장 (다음 비교 기준점)
     if(fbTime)localStorage.setItem('_local_updatedAt',new Date(fbTime).toISOString());
     return ok?{ok:true,stockData:stockData}:false;
   }catch(e){return false;}
@@ -741,18 +736,7 @@ window.doRestoreSnapshot=async function(dateKey){
 };
 
 window.doLogout=async function(){closeSyncMenu();try{await window._fb.signOut(_fbAuth);localStorage.removeItem('fb_login_skipped');showSyncToast('로그아웃됐어요');updateSyncStatus(false,null);}catch(e){}};
-window.doCloudRestore=async function(){
-  closeSyncMenu();showSyncToast('복원 중...');
-  var result=await restoreFromCloud();
-  if(result&&result.ok){
-    showSyncToast('✅ 복원 완료!');
-    var sf=document.getElementById('stockFrame');
-    if(sf&&sf.contentWindow)sf.contentWindow.postMessage({type:'RELOAD_DATA',data:result.stockData||{}},'*');
-    setTimeout(function(){location.reload();},1800);
-  }else if(result==='local_newer'){
-    showSyncToast('로컬이 최신 데이터예요');
-  }else{showSyncToast('복원할 데이터가 없어요');}
-};
+window.doCloudRestore=async function(){closeSyncMenu();showSyncToast('복원 중...');var ok=await restoreFromCloud();if(ok){showSyncToast('복원 완료! 새로고침합니다...');setTimeout(function(){location.reload();},1800);}else{showSyncToast('복원할 데이터가 없어요');}};
 function showSyncToast(msg){var t=document.getElementById('syncToast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},3000);}
 
 /* ════ CMA 모달 ════ */

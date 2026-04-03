@@ -376,9 +376,12 @@ async function backup() {
 }
 
 const _orig = localStorage.setItem.bind(localStorage);
+// ★ 복원 중 플래그: index.html이 RELOAD_DATA로 복원할 때 자동백업 차단
+let _restoring = false;
 localStorage.setItem = function(k, v) {
   _orig(k, v);
-  if (KEYS.includes(k) && _uid) {
+  // 복원 중이거나 KEYS에 없으면 자동백업 안 함
+  if (KEYS.includes(k) && _uid && !_restoring) {
     clearTimeout(_timer);
     _timer = setTimeout(backup, 2000);
   }
@@ -386,31 +389,30 @@ localStorage.setItem = function(k, v) {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    // 로그인 안 됨 → Google 자동 로그인 시도
     badge("Google 로그인 중...");
     autoGoogleLogin();
     return;
   }
   _uid = user.uid;
   const name = user.displayName ? user.displayName.split(' ')[0] : user.email;
-  badge(name + " 동기화 중...");
+  badge(name + " ✅");
+  // ★ stock.html은 자체 Firebase sync 하지 않음
+  // index.html이 타임스탬프 비교 후 RELOAD_DATA로 데이터 전달
+  // stock.html은 로컬 데이터가 없을 때만 Firebase에서 복원
   try {
     const snap = await get(ref(db, "users/" + _uid + "/apps/stock"));
     const local = localStorage.getItem("pf_v4");
     const isEmpty = !local || local === '{"holdings":{},"fxRate":1360}';
-    // ★ 타임스탬프 비교: Firebase vs 로컬 중 최신 우선
-    let fbTime = null, localTime = null;
-    if (snap.exists() && snap.val().updatedAt) fbTime = new Date(snap.val().updatedAt).getTime();
-    try { const pfd = JSON.parse(local||'{}'); if(pfd.updatedAt) localTime = new Date(pfd.updatedAt).getTime(); } catch(e2){}
-    if (snap.exists() && snap.val()["pf_v4"] && (isEmpty || (fbTime && localTime && fbTime > localTime))) {
-      // Firebase가 더 최신이거나 로컬이 비어있음 → Firebase로 복원
+    if (snap.exists() && snap.val()["pf_v4"] && isEmpty) {
+      // 로컬이 완전히 비어있을 때만 Firebase에서 복원
+      _restoring = true;
       const data = snap.val();
       KEYS.forEach(k => { if(data[k]) _orig(k, data[k]); });
-      badge("최신 데이터 동기화됨 🔄");
+      _restoring = false;
+      badge("데이터 복원됨 🔄");
       setTimeout(() => location.reload(), 1200);
     } else {
-      // 로컬이 더 최신 → Firebase에 업로드
-      badge(name + " ✅ 동기화됨");
+      // 로컬에 데이터 있음 → index.html이 동기화 담당, stock은 백업만
       setTimeout(backup, 1500);
     }
   } catch(e) {
@@ -1895,23 +1897,17 @@ function App(){
         try{window.parent.postMessage({type:"BACKUP_DATA",data},'*');}catch(err){}
         return;
       }
-      // ★ 부모(index.html)가 Firebase 복원 후 데이터 갱신 요청
+      // ★ Firebase 복원 후 데이터 갱신 요청
       if(d.type==="RELOAD_DATA"){
         const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
-        // 부모가 보내준 데이터를 localStorage에 저장
-        if(d.data){
-          keys.forEach(k=>{if(d.data[k]){try{localStorage.setItem(k,d.data[k]);}catch(e){}}});
-        }
-        // React 상태 갱신: 저장된 데이터로 holdings 다시 로드
+        // ★ 복원 중 플래그로 자동백업 차단
+        _restoring=true;
+        if(d.data){keys.forEach(k=>{if(d.data[k]){try{localStorage.setItem(k,d.data[k]);}catch(e){}}});}
+        _restoring=false;
+        clearTimeout(_timer);
         try{
           const stored=localStorage.getItem("pf_v4");
-          if(stored){
-            const parsed=JSON.parse(stored);
-            if(parsed&&parsed.holdings){
-              setHoldings(parsed.holdings);
-              holdingsRef.current=parsed.holdings;
-            }
-          }
+          if(stored){const parsed=JSON.parse(stored);if(parsed&&parsed.holdings){setHoldings(parsed.holdings);holdingsRef.current=parsed.holdings;}}
         }catch(e){console.warn('[RELOAD_DATA]',e);}
         return;
       }
