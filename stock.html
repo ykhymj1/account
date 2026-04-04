@@ -1707,6 +1707,24 @@ function App(){
       });
     });
     const dayPct=dayBase>0?dayPnl/dayBase*100:0;
+    // ★ 종목별 계좌 수익률 맵 생성 (ticker → {pnl, pct, invested, current})
+    const tickerPnl={};
+    nonCmaAccts.forEach(ac=>{
+      const r=ac.shared?0.5:1;
+      (ac.list||[]).forEach(h=>{
+        if(!h.ticker||!h.invested)return;
+        const key=h.ticker;
+        if(!tickerPnl[key]){tickerPnl[key]={invested:0,current:0};}
+        tickerPnl[key].invested+=(h.invested||0)*r;
+        tickerPnl[key].current+=(h.current||0)*r;
+      });
+    });
+    // pnl/pct 계산
+    Object.keys(tickerPnl).forEach(k=>{
+      const t=tickerPnl[k];
+      t.pnl=t.current-t.invested;
+      t.pct=t.invested>0?t.pnl/t.invested*100:0;
+    });
     try{
       window.parent.postMessage({
         type:'STOCK_SUMMARY',
@@ -1737,7 +1755,7 @@ function App(){
             memo:h.memo||''
           }))
         })),
-        dayPnl,dayPct,fxRate,fxAuto,fxTime,accts
+        dayPnl,dayPct,fxRate,fxAuto,fxTime,accts,tickerPnl
       },'*');
     }catch(e){}
   },[myTotal,myPnl,myPct,allAccounts,fxRate,fxAuto,fxTime]);

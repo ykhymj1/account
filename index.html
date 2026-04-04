@@ -107,6 +107,9 @@ input:focus{outline:none;}
 .wl-pct{font-size:13px;font-weight:800;margin-top:5px;display:flex;align-items:center;gap:3px;}
 .wl-up{color:#dc2626;}.wl-dn{color:#2563eb;}.wl-flat{color:#94a3b8;}
 .wl-arrow{font-size:12px;}
+/* 계좌 수익률 행 */
+.wl-acct-pnl{font-size:11px;font-weight:700;margin-top:3px;display:flex;align-items:center;gap:2px;padding-top:4px;border-top:1px solid #f1f5f9;}
+.wl-acct-up{color:#dc2626;}.wl-acct-dn{color:#2563eb;}.wl-acct-flat{color:#94a3b8;}
 #wlAddBtn{display:flex;align-items:center;justify-content:center;gap:4px;margin:0 12px 14px;padding:11px;border-radius:12px;background:#eff6ff;border:1.5px dashed #93c5fd;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;}
 /* Watchlist edit modal */
 #wlModal{position:fixed;inset:0;max-width:480px;margin:0 auto;z-index:300;background:rgba(0,0,0,.55);display:none;align-items:flex-end;}
@@ -1011,6 +1014,11 @@ window.addEventListener('message',function(e){
     _summaryReceived=true;
     saveSummaryCache(d); // ★ 캐시 저장
     applySummaryToHome(d);
+    // ★ 종목별 계좌 수익률 저장 → watchlist 카드 갱신
+    if(d.tickerPnl){
+      _wlTickerPnl=d.tickerPnl;
+      wlRender();
+    }
     // ★ STOCK_SUMMARY 수신 직후 자동 백업 요청 (로그인 상태일 때만)
     if(_fbUser&&_fbDb){
       var sf2=document.getElementById('stockFrame');
@@ -1188,6 +1196,7 @@ var WL_KEY = 'ykh_watchlist_v1';
 var WL_FX_URL = 'https://script.google.com/macros/s/AKfycbyXm2m2VkNbyYiV6UldqNuRG0ccfZqwLZLKE2bVnf-7_UdeN_S3h95uidGtg93HaRstBg/exec';
 
 var _wlPrices = {};
+var _wlTickerPnl = {}; // ★ stock.html에서 받은 계좌 종목별 수익률
 var _wlLoading = false;
 var _wlDragSrc = null;
 
@@ -1433,6 +1442,26 @@ function wlRender(){
         pctStr=(p.pct>0?'+':'')+p.pct.toFixed(2)+'%';
       }
     }
+
+    // ★ 계좌 수익률 (stock.html STOCK_SUMMARY.tickerPnl에서)
+    var acctPnlHtml='';
+    var tp=_wlTickerPnl&&_wlTickerPnl[item.symbol];
+    if(tp&&tp.invested>0){
+      var apct=tp.pct;
+      var acls=apct>0?'wl-acct-up':apct<0?'wl-acct-dn':'wl-acct-flat';
+      var aarr=apct>0?'▲':apct<0?'▼':'';
+      var apctStr=(apct>0?'+':'')+apct.toFixed(2)+'%';
+      // 수익금 표시 (원화 포맷)
+      var pnlAbs=Math.abs(Math.round(tp.pnl));
+      var pnlSign=tp.pnl>=0?'+':'-';
+      var pnlStr=pnlSign+'₩'+pnlAbs.toLocaleString('ko-KR');
+      acctPnlHtml='<div class="wl-acct-pnl '+acls+'">'+
+        '<span style="font-size:10px;">내계좌</span>'+
+        '<span style="margin-left:3px;">'+aarr+' '+apctStr+'</span>'+
+        '<span style="font-size:10px;margin-left:4px;opacity:.8;">'+pnlStr+'</span>'+
+      '</div>';
+    }
+
     var card=document.createElement('div');
     card.className='wl-card';
     card.dataset.idx=idx;
@@ -1440,7 +1469,10 @@ function wlRender(){
     card.innerHTML=
       '<div class="wl-name">'+item.name+'</div>'+
       '<div class="wl-price">'+priceStr+'</div>'+
-      (pctStr?'<div class="wl-pct '+pctClass+'"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat">--</div>');
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;">'+
+        (pctStr?'<div class="wl-pct '+pctClass+'" style="margin-top:0;"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat" style="margin-top:0;">--</div>')+
+      '</div>'+
+      acctPnlHtml;
     // drag events
     card.addEventListener('dragstart',function(e){_wlDragSrc=idx;card.classList.add('dragging');});
     card.addEventListener('dragend',function(){card.classList.remove('dragging');document.querySelectorAll('.wl-card').forEach(function(c){c.classList.remove('drag-over');});});
