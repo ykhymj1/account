@@ -1469,10 +1469,10 @@ function wlRender(){
     card.innerHTML=
       '<div class="wl-name">'+item.name+'</div>'+
       '<div class="wl-price">'+priceStr+'</div>'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:5px;">'+
         (pctStr?'<div class="wl-pct '+pctClass+'" style="margin-top:0;"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat" style="margin-top:0;">--</div>')+
-      '</div>'+
-      acctPnlHtml;
+        (tp&&tp.invested>0?'<div class="wl-pct '+(tp.pct>0?'wl-up':tp.pct<0?'wl-dn':'wl-flat')+'" style="margin-top:0;font-size:11px;">'+(tp.pct>0?'▲':tp.pct<0?'▼':'')+(tp.pct>0?'+':'')+tp.pct.toFixed(2)+'%</div>':'')+
+      '</div>';
     // drag events
     card.addEventListener('dragstart',function(e){_wlDragSrc=idx;card.classList.add('dragging');});
     card.addEventListener('dragend',function(){card.classList.remove('dragging');document.querySelectorAll('.wl-card').forEach(function(c){c.classList.remove('drag-over');});});
