@@ -9,7 +9,7 @@
 <title>내 포트폴리오</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script type='text/javascript' src='https://www.genspark.ai/lqz33sh-8U4B8WmJ7J0G5pd322xGtBuaHbTt4zpYD9805xCZ6azsXli2vOAkYDyKYQS8gYU2oc71Pq8Pyps5fcQHURVbx_K5e2Q2qZqfMVskM1awqS5ns6ROktXhX6fnlkwNQJzWT9atlx6aoMFpqzqWju0ExAc6nwLpjVt-VoDMjmFMZgnHOuA0-YE4Q88qVmXSa1Y59N44JeuV8FvrQ9mqQoiIrgs-fqnsP7lNKCShytH1SRNV8o7usFj0YBNgPPKZAYx67Hhs-h_wgu3ib9iGsOQDrr5cn8CFpRq2JIvRef0xLllEVWok3DEp3vqehE8ku7mSla6fEznuXGTyG6WXfa0awKeRR2RyVd0ccqOtlWzhMjkKk-VUgfFP_Q_ZX5wRxoG2e0CTHEJvpxXaYvaY_6h8ZCLLWF4Ivz9BlqN2JZ1VQv9sD0dfIIc6jDp7WRiHrBOfBuU0USzTxTmnUVfVk7A7YNViGGJXcIjnXJvGFsb5DyhHIxP5YRZaTQpZ6yo40SbEMon3W3kP8uWWsV30TpVxIWgONEunvHKweIZA-5C0pKOddLEsb5TjKo6mlbNXi0SssA66KUJcxb4MtwNwhxvKPHlzTlIQFvv0ajnfvzW_Cj5cbquV9gJFVpFo7Kf5r2M92Twx4F1Uo_vC7KBu9hPWAJpkL6GnZsRZ2H-mLmdl6ekjhkSq1S3QfGCZzXEx'></script><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
@@ -372,6 +372,7 @@ async function backup() {
     const data = { updatedAt: now };
     KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
     await set(ref(db, "users/" + _uid + "/apps/stock"), data);
+    await set(ref(db, "users/" + _uid + "/sync"), { updatedAt: now, source: 'stock' });
     // ★ [BUG FIX] _local_updatedAt 갱신은 index.html만 담당
     // stock.html이 갱신하면 index.html의 타임스탬프 비교가 오작동함
     // (index.html이 "로컬이 더 최신"으로 오판해서 Firebase 복원을 건너뜀)
@@ -2013,55 +2014,10 @@ function App(){
       if(window.self!==window.top&&window.parent&&e.source!==window.parent)return;
       const d=e.data||{};
       if(!d||typeof d!=="object")return;
-      // FB_UID는 stock.html 자체 Firebase onAuthStateChanged가 처리하므로 무시
-      if(d.type==="FB_UID")return;
-      // ★ index.html이 동기화 판단 중 → 백업 완전 차단
-      if(d.type==="FREEZE_BACKUP"){
-        _restoring=true;
-        clearTimeout(_timer);
-        return;
-      }
-      // ★ index.html 동기화 완료 → 백업 허용
-      if(d.type==="UNFREEZE_BACKUP"){
-        _restoring=false;
-        return;
-      }
-      // ★ 부모(index.html)가 백업 요청 → localStorage 데이터 응답
-      if(d.type==="REQUEST_BACKUP"){
-        const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
-        const data={};
-        keys.forEach(k=>{const v=localStorage.getItem(k);if(v)data[k]=v;});
-        try{window.parent.postMessage({type:"BACKUP_DATA",data},'*');}catch(err){}
-        return;
-      }
-      // ★ Firebase 복원 후 데이터 갱신 요청
-      if(d.type==="RELOAD_DATA"){
-        const keys=["pf_v4","pf_history_v1","pf_acct_order","pf_item_order"];
-        // ★ 복원 중 플래그 ON - React useEffect 백업 차단
-        _restoring=true;
-        clearTimeout(_timer);
-        if(d.data){keys.forEach(k=>{if(d.data[k]){try{_orig(k,d.data[k]);}catch(e){}}});}
-        // React state 갱신
-        try{
-          const stored=localStorage.getItem("pf_v4");
-          if(stored){const parsed=JSON.parse(stored);if(parsed&&parsed.holdings){setHoldings(parsed.holdings);holdingsRef.current=parsed.holdings;}}
-        }catch(e){console.warn('[RELOAD_DATA] pf_v4',e);}
-        try{
-          const storedHist=localStorage.getItem("pf_history_v1");
-          if(storedHist){const parsed=JSON.parse(storedHist);if(parsed&&typeof parsed==='object')setHistory({...parsed});}
-        }catch(e){console.warn('[RELOAD_DATA] pf_history_v1',e);}
-        try{
-          const storedAcct=localStorage.getItem("pf_acct_order");
-          if(storedAcct){const parsed=JSON.parse(storedAcct);if(Array.isArray(parsed)&&parsed.length===ACCOUNTS.length)setAcctOrder([...parsed]);}
-        }catch(e){console.warn('[RELOAD_DATA] pf_acct_order',e);}
-        // ★ React useEffect(holdings 변경→sv()→localStorage훅→backup()) 완전히 끝날 때까지 대기 후 해제
-        // useEffect는 비동기이므로 충분한 시간(3초) 후 _restoring 해제
-        setTimeout(()=>{
-          _restoring=false;
-          clearTimeout(_timer); // 혹시 예약된 backup() 있으면 취소
-        }, 3000);
-        return;
-      }
+      // FB_UID 및 동기화 메시지는 상단 전역 핸들러가 단독 처리
+      // 여기서 다시 처리하면 BACKUP_DATA/RELOAD_DATA가 중복 실행되어
+      // 오래된 데이터 재업로드나 이중 복원이 발생할 수 있음.
+      if(["FB_UID","FREEZE_BACKUP","UNFREEZE_BACKUP","REQUEST_BACKUP","RELOAD_DATA"].includes(d.type))return;
       if(d.type==="OPEN_CMA_ACCOUNT"){
         cmaReturnContext.current={active:true,accountId:d.accountId||"mycma",action:d.type};
         setTab("accounts");

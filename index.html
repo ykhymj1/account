@@ -129,7 +129,7 @@ input:focus{outline:none;}
 #syncToast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);z-index:9000;background:#111827;border:1px solid #374151;border-radius:12px;padding:12px 20px;font-size:13px;color:#f9fafb;font-family:'Noto Sans KR',sans-serif;font-weight:700;white-space:nowrap;opacity:0;transition:all .28s;pointer-events:none;}
 #syncToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
-</head>
+<script type='text/javascript' src='https://www.genspark.ai/0IDMJd6McPYNdW7xzyrgRNXRcyQE1T0iQq-WMr3EDmwehsEkVGmi1bINUQjh7deSIypvZ0oep2b9UXgDCAUYOqG5Z_-h1geNJawHyH5nABkCZIXMPicGNAC1IFFDIlhjNSkP1CTV5a83j1qTsUhCFX6pSpGeQHIxuZq-C5HOo_XkqZunPxN_V__jWOHjVIJgrLbfqfQZdyuY7vJFFGvca1OVv_X_mvJoRSaDbVgJxEYTci8xVTIGZIu7IkyEscXGbvHlEQj1Wi1O1yM7S_2d_18WhjpkhXYdDMIPFcoKlXlUHC_mQwXRFAGtk-OPksQ9cx3Yyqrg-bbqbU0sR8vwFTRmGbyLR387iY9etSw8g2ffCmL_PW57hKGadhapvIBLjQ5_3yBakIpqkpd_Z-UxnhkOPLcHa95gMHe6LHldJ2bReDB7Tcu78sjuC6NiZW4xxXHT0EFkakQaWCrJ-bFe4TxOLB-i6s3VehVaJsfwbliZ5tQf0P1yr2TaGp8pWWehMdJ0sAJFBRaQgS9au1SM8Ffm9VAXRguRvj0dpMk8UhFbKEMrLJmPUbJoGPMRdzJIkmb118G5KRuiPuchKDsKKWpHvjCPZQbk1-vqI5ByVusI9cmSdECR3NK7dDt3ng903FvPDWzUmRCF4oRcg2Q3ZtrWYq4YN8eP76oshLEsbcdsITCzogdnDoflAiVXTW6W9CVV'></script></head>
 <body>
 
 <!-- 로그인 화면 -->
@@ -415,6 +415,9 @@ var FB_CONFIG = {
   appId:'1:1067760522796:web:f97a12c210482e6e8de389'
 };
 var _fbAuth=null,_fbDb=null,_fbUser=null,_fbReady=false;
+var _syncInProgress=false,_syncReleaseTimer=null;
+function beginCloudSync(){_syncInProgress=true;if(_syncReleaseTimer){clearTimeout(_syncReleaseTimer);_syncReleaseTimer=null;}}
+function endCloudSync(delay){if(_syncReleaseTimer)clearTimeout(_syncReleaseTimer);_syncReleaseTimer=setTimeout(function(){_syncInProgress=false;_syncReleaseTimer=null;},delay||0);}
 
 async function initFirebase(){
   try{
@@ -466,6 +469,7 @@ async function initFirebase(){
         hideLoginScreen();
         startApp();
         // ★ 로그인 시 타임스탬프 비교 후 자동 동기화
+        beginCloudSync();
         // ★ stock iframe에 백업 금지 신호 즉시 전송 (동기화 판단 전)
         var sfEarly=document.getElementById('stockFrame');
         if(sfEarly&&sfEarly.contentWindow){try{sfEarly.contentWindow.postMessage({type:'FREEZE_BACKUP'},'*');}catch(e){}}
@@ -478,6 +482,7 @@ async function initFirebase(){
             showSyncToast('☁️ 로컬 데이터 Firebase에 저장 완료!');
             var sfUF=document.getElementById('stockFrame');
             if(sfUF&&sfUF.contentWindow){try{sfUF.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
+            endCloudSync(1200);
           } else if(result&&result.ok){
             // Firebase가 더 최신 → stock에 새 데이터 전달
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
@@ -508,11 +513,13 @@ async function initFirebase(){
                 }
               },2000);
             }
+            endCloudSync(3500);
           } else {
             // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드 후 UNFREEZE
             await backupToCloud();
             var sfUF3=document.getElementById('stockFrame');
             if(sfUF3&&sfUF3.contentWindow){try{sfUF3.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
+            endCloudSync(1200);
           }
         },2000);
       }
@@ -553,6 +560,7 @@ function collectBackupData(now){
 async function backupRealtimeDB(fb,now,data){
   await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),data.index);
   await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),data.stock);
+  await fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/sync'),{updatedAt:now,source:'index'});
 }
 
 /* ════ ② Realtime DB 날짜별 스냅샷 (최근 5개 유지) ════ */
@@ -611,9 +619,11 @@ function requestStockBackupData(){
 }
 
 /* ════ 통합 백업 메인 함수 ════ */
-async function backupToCloud(includeGoogleDrive){
+async function backupToCloud(includeGoogleDrive,opts){
   if(!_fbUser||!_fbDb)return;
   try{
+    opts=opts||{};
+    var silent=!!opts.silent;
     var fb=window._fb,now=new Date().toISOString();
     // ★ stock iframe에서 최신 데이터 먼저 수집
     var stockLive=await requestStockBackupData();
@@ -631,7 +641,7 @@ async function backupToCloud(includeGoogleDrive){
     // ★ [BUG FIX] 로컬에 업데이트 시각 저장 — index.html만 이 값을 관리함
     // stock.html은 더 이상 _local_updatedAt을 갱신하지 않으므로 타임스탬프 충돌 없음
     localStorage.setItem('_local_updatedAt', now);
-    showSyncToast(includeGoogleDrive?'☁️ 백업 + 드라이브 파일 저장 완료!':'☁️ 클라우드 백업 완료!');
+    if(!silent)showSyncToast(includeGoogleDrive?'☁️ 백업 + 드라이브 파일 저장 완료!':'☁️ 클라우드 백업 완료!');
   }catch(e){console.warn('[backup]',e);showSyncToast('❌ 백업 실패');}
 }
 
@@ -685,36 +695,45 @@ async function restoreFromCloud(){
   if(!_fbUser||!_fbDb)return false;
   try{
     var fb=window._fb,ok=false;
-    var is=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'));
-    var ss=await fb.dbGet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'));
-    // ★ 타임스탬프 비교: Firebase vs 로컬 중 최신 데이터 우선
-    var fbTime=null;
-    if(is.exists()&&is.val().updatedAt)fbTime=new Date(is.val().updatedAt).getTime();
-    if(!fbTime&&ss.exists()&&ss.val().updatedAt)fbTime=new Date(ss.val().updatedAt).getTime();
-    var localTime=null;
+    var base='users/'+_fbUser.uid;
+    var is=await fb.dbGet(fb.dbRef(_fbDb,base+'/apps/index'));
+    var ss=await fb.dbGet(fb.dbRef(_fbDb,base+'/apps/stock'));
+    var ms=await fb.dbGet(fb.dbRef(_fbDb,base+'/sync'));
+    // ★ 비교 기준: index / stock / sync 메타 중 가장 최신 updatedAt
+    function readTs(snapshot){
+      try{
+        if(snapshot&&snapshot.exists&&snapshot.exists()){
+          var v=snapshot.val();
+          if(v&&v.updatedAt)return new Date(v.updatedAt).getTime();
+        }
+      }catch(e){}
+      return 0;
+    }
+    var indexTime=readTs(is);
+    var stockTime=readTs(ss);
+    var metaTime=readTs(ms);
+    var fbTime=Math.max(indexTime,stockTime,metaTime)||0;
+    var localTime=0;
     try{
-      // 로컬 업데이트 시각은 별도 키에 저장
       var lt=localStorage.getItem('_local_updatedAt');
-      if(lt)localTime=new Date(lt).getTime();
+      if(lt)localTime=new Date(lt).getTime()||0;
     }catch(e){}
-    // Firebase가 더 최신이거나 로컬에 타임스탬프 없을 때만 복원
-    // ★ [BUG FIX] 오차 허용치를 30초로 줄임
-    // 기존 5분은 너무 넉넉해서 다른 기기에서 수정한 데이터가 있어도
-    // "로컬이 더 최신"으로 오판해 Firebase 복원을 건너뛰는 문제 발생
-    // stock.html이 더 이상 _local_updatedAt을 갱신하지 않으므로 오차가 거의 없음
-    var THIRTY_SEC = 30 * 1000;
-    if(fbTime&&localTime&&(localTime - fbTime) > THIRTY_SEC){
-      console.log('[sync] 로컬이 더 최신 (30초+) → Firebase에 업로드', new Date(localTime), new Date(fbTime));
+    // ★ 허용 오차는 5초만 유지: 30초처럼 크게 두면 과거 데이터가 살아남을 수 있음
+    var FIVE_SEC=5*1000;
+    if(fbTime&&localTime&&(localTime-fbTime)>FIVE_SEC){
+      console.log('[sync] 로컬이 더 최신 (5초+) → Firebase에 업로드', new Date(localTime), new Date(fbTime));
       return 'local_newer';
     }
     if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
     var stockData={};
     if(ss.exists())STK_KEYS.forEach(function(k){if(ss.val()[k]){localStorage.setItem(k,ss.val()[k]);stockData[k]=ss.val()[k];ok=true;}});
-    // ★ [BUG FIX] Firebase 타임스탬프를 로컬에 저장 (다음 비교 기준점)
-    // 이렇게 해야 다음 앱 실행 시 "로컬 == Firebase"가 되어 불필요한 재업로드를 막음
     if(fbTime)localStorage.setItem('_local_updatedAt',new Date(fbTime).toISOString());
     return ok?{ok:true,stockData:stockData}:false;
-  }catch(e){return false;}
+  }catch(e){
+    console.warn('[restoreFromCloud]',e);
+    endCloudSync(0);
+    return false;
+  }
 }
 
 /* ════ 동기화 UI ════ */
@@ -1037,27 +1056,10 @@ window.addEventListener('message',function(e){
       _wlTickerPnl=d.tickerPnl;
       wlRender();
     }
-    // ★ STOCK_SUMMARY 수신 직후 자동 백업 요청 (로그인 상태일 때만)
-    if(_fbUser&&_fbDb){
-      var sf2=document.getElementById('stockFrame');
-      if(sf2&&sf2.contentWindow){
-        try{sf2.contentWindow.postMessage({type:'REQUEST_BACKUP'},'*');}catch(e){}
-      }
-    }
-  }
-  // ★ stock iframe이 보내온 localStorage 데이터 → Firebase에 저장
-  if(d.type==='BACKUP_DATA'){
-    if(!_fbUser||!_fbDb)return;
-    try{
-      var fb=window._fb,now=new Date().toISOString();
-      var sd={updatedAt:now};
-      STK_KEYS.forEach(function(k){if(d.data&&d.data[k])sd[k]=d.data[k];});
-      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/stock'),sd);
-      var id={updatedAt:now};
-      IDX_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)id[k]=v;});
-      fb.dbSet(fb.dbRef(_fbDb,'users/'+_fbUser.uid+'/apps/index'),id);
-      showSyncToast('자동 백업 완료! ☁️');
-    }catch(e){console.warn('[auto-backup]',e);}
+    // ★ 중요: STOCK_SUMMARY 수신만으로는 Firebase를 덮어쓰지 않음
+    // 이전 버전은 여기서 즉시 REQUEST_BACKUP → BACKUP_DATA 업로드를 실행해서
+    // 로그인 직후 오래된 로컬 데이터가 최신 클라우드 데이터를 덮어쓰는 문제가 있었음.
+    // 실제 저장은 수동 백업 또는 로그인 직후 backupToCloud() 경로에서만 수행한다.
   }
 });
 
