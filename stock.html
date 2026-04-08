@@ -365,20 +365,55 @@ async function autoGoogleLogin() {
 
 async function backup() {
   if (!_uid) return;
+  // ★ [BUG FIX] FREEZE_BACKUP 신호를 받은 상태면 백업 하지 않음
+  if (window._freezeBackup) { badge("백업 대기 중 ⏸"); return; }
   try {
     const now = new Date().toISOString();
     const data = { updatedAt: now };
     KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
     await set(ref(db, "users/" + _uid + "/apps/stock"), data);
-    // ★ Firebase 저장 완료 후 _local_updatedAt 갱신 (index.html 동기화 비교 기준)
-    try { _orig('_local_updatedAt', now); } catch(e2) {}
+    // ★ [BUG FIX] _local_updatedAt 갱신은 index.html만 담당
+    // stock.html이 갱신하면 index.html의 타임스탬프 비교가 오작동함
+    // (index.html이 "로컬이 더 최신"으로 오판해서 Firebase 복원을 건너뜀)
     badge("백업 완료 ✅");
   } catch(e) {
     console.warn("[Stock] 백업 실패:", e);
   }
 }
 
+// ★ [BUG FIX] index.html의 FREEZE/UNFREEZE 신호 수신 및 REQUEST_BACKUP 처리
+window._freezeBackup = false;
 const _orig = localStorage.setItem.bind(localStorage);
+window.addEventListener('message', function(e) {
+  if (!e.data || !e.data.type) return;
+  if (e.data.type === 'FREEZE_BACKUP') {
+    window._freezeBackup = true;
+    clearTimeout(_timer); // 예약된 자동백업도 취소
+    return;
+  }
+  if (e.data.type === 'UNFREEZE_BACKUP') {
+    window._freezeBackup = false;
+    return;
+  }
+  if (e.data.type === 'REQUEST_BACKUP') {
+    // index.html이 백업 데이터 요청 — 현재 localStorage 상태 전송
+    const data = {};
+    KEYS.forEach(k => { const v = localStorage.getItem(k); if(v) data[k] = v; });
+    try { window.parent.postMessage({ type: 'BACKUP_DATA', data: data }, '*'); } catch(err) {}
+    return;
+  }
+  if (e.data.type === 'RELOAD_DATA') {
+    // index.html이 Firebase 최신 데이터를 전달 — 로컬에 저장 후 리로드
+    if (!e.data.data) return;
+    _restoring = true;
+    const d = e.data.data;
+    KEYS.forEach(k => { if(d[k]) _orig(k, d[k]); });
+    _restoring = false;
+    badge("🔄 동기화 완료, 새로고침...");
+    setTimeout(() => location.reload(), 1200);
+    return;
+  }
+});
 // ★ 복원 중 플래그: index.html이 RELOAD_DATA로 복원할 때 자동백업 차단
 let _restoring = false;
 localStorage.setItem = function(k, v) {

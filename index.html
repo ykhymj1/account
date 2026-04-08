@@ -473,32 +473,46 @@ async function initFirebase(){
         setTimeout(async function(){
           var result=await restoreFromCloud();
           if(result==='local_newer'){
-            // 로컬이 더 최신 → Firebase에 업로드
-            // stock의 백업 금지 해제
-            var sfUnfreeze=document.getElementById('stockFrame');
-            if(sfUnfreeze&&sfUnfreeze.contentWindow){try{sfUnfreeze.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
+            // 로컬이 더 최신 → Firebase에 업로드 후 UNFREEZE
             await backupToCloud();
             showSyncToast('☁️ 로컬 데이터 Firebase에 저장 완료!');
+            var sfUF=document.getElementById('stockFrame');
+            if(sfUF&&sfUF.contentWindow){try{sfUF.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
           } else if(result&&result.ok){
-            // Firebase가 더 최신 → stock에 새 데이터 전달 (백업 금지 상태에서)
+            // Firebase가 더 최신 → stock에 새 데이터 전달
             showSyncToast('🔄 최신 데이터로 동기화됐어요!');
             window._pendingSyncData=result.stockData||{};
-            var sf=document.getElementById('stockFrame');
-            if(sf&&sf.contentWindow){
-              try{sf.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');window._pendingSyncData=null;}catch(e){}
+            // ★ [BUG FIX] stock.html에 RELOAD_DATA 전송 후 UNFREEZE_BACKUP도 함께 전송
+            // 기존 코드는 RELOAD_DATA 후 stock이 reload되면 FREEZE 상태가 해제되지만
+            // stock이 아직 로드 안 됐을 경우 대비해 재시도 로직 유지
+            function sendReload(){
+              var sf=document.getElementById('stockFrame');
+              if(sf&&sf.contentWindow){
+                try{
+                  sf.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');
+                  // RELOAD_DATA를 받은 stock.html은 location.reload()하므로 UNFREEZE 불필요
+                  window._pendingSyncData=null;
+                }catch(e){}
+              }
             }
+            sendReload();
             if(window._pendingSyncData){
               setTimeout(function(){
                 if(!window._pendingSyncData)return;
-                var sf2=document.getElementById('stockFrame');
-                if(sf2&&sf2.contentWindow){try{sf2.contentWindow.postMessage({type:'RELOAD_DATA',data:window._pendingSyncData},'*');window._pendingSyncData=null;}catch(e){}}
-              },1500);
+                sendReload();
+                // 그래도 실패했으면 UNFREEZE해서 정상 동작 유지
+                if(window._pendingSyncData){
+                  var sfUF2=document.getElementById('stockFrame');
+                  if(sfUF2&&sfUF2.contentWindow){try{sfUF2.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
+                  window._pendingSyncData=null;
+                }
+              },2000);
             }
           } else {
-            // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드
-            var sfUnfreeze2=document.getElementById('stockFrame');
-            if(sfUnfreeze2&&sfUnfreeze2.contentWindow){try{sfUnfreeze2.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
+            // Firebase에 데이터 없음 → 로컬을 Firebase에 업로드 후 UNFREEZE
             await backupToCloud();
+            var sfUF3=document.getElementById('stockFrame');
+            if(sfUF3&&sfUF3.contentWindow){try{sfUF3.contentWindow.postMessage({type:'UNFREEZE_BACKUP'},'*');}catch(e){}}
           }
         },2000);
       }
@@ -614,7 +628,8 @@ async function backupToCloud(includeGoogleDrive){
     await backupSnapshotDB(fb,now,data);
     // ③ 구글 드라이브 (요청 시에만)
     if(includeGoogleDrive)backupToGoogleDrive(now,data);
-    // ★ 로컬에도 업데이트 시각 저장 (동기화 비교용)
+    // ★ [BUG FIX] 로컬에 업데이트 시각 저장 — index.html만 이 값을 관리함
+    // stock.html은 더 이상 _local_updatedAt을 갱신하지 않으므로 타임스탬프 충돌 없음
     localStorage.setItem('_local_updatedAt', now);
     showSyncToast(includeGoogleDrive?'☁️ 백업 + 드라이브 파일 저장 완료!':'☁️ 클라우드 백업 완료!');
   }catch(e){console.warn('[backup]',e);showSyncToast('❌ 백업 실패');}
@@ -683,17 +698,20 @@ async function restoreFromCloud(){
       if(lt)localTime=new Date(lt).getTime();
     }catch(e){}
     // Firebase가 더 최신이거나 로컬에 타임스탬프 없을 때만 복원
-    // ★ localTime이 fbTime보다 5분 초과로 최신일 때만 local_newer 판단
-    // (stock backup()이 먼저 실행되는 경우 등 오차 방지)
-    var FIVE_MIN = 5 * 60 * 1000;
-    if(fbTime&&localTime&&(localTime - fbTime) > FIVE_MIN){
-      console.log('[sync] 로컬이 더 최신 (5분+) → Firebase에 업로드', new Date(localTime), new Date(fbTime));
+    // ★ [BUG FIX] 오차 허용치를 30초로 줄임
+    // 기존 5분은 너무 넉넉해서 다른 기기에서 수정한 데이터가 있어도
+    // "로컬이 더 최신"으로 오판해 Firebase 복원을 건너뛰는 문제 발생
+    // stock.html이 더 이상 _local_updatedAt을 갱신하지 않으므로 오차가 거의 없음
+    var THIRTY_SEC = 30 * 1000;
+    if(fbTime&&localTime&&(localTime - fbTime) > THIRTY_SEC){
+      console.log('[sync] 로컬이 더 최신 (30초+) → Firebase에 업로드', new Date(localTime), new Date(fbTime));
       return 'local_newer';
     }
     if(is.exists())IDX_KEYS.forEach(function(k){if(is.val()[k]){localStorage.setItem(k,is.val()[k]);ok=true;}});
     var stockData={};
     if(ss.exists())STK_KEYS.forEach(function(k){if(ss.val()[k]){localStorage.setItem(k,ss.val()[k]);stockData[k]=ss.val()[k];ok=true;}});
-    // ★ Firebase 타임스탬프를 로컬에 저장 (다음 비교 기준점)
+    // ★ [BUG FIX] Firebase 타임스탬프를 로컬에 저장 (다음 비교 기준점)
+    // 이렇게 해야 다음 앱 실행 시 "로컬 == Firebase"가 되어 불필요한 재업로드를 막음
     if(fbTime)localStorage.setItem('_local_updatedAt',new Date(fbTime).toISOString());
     return ok?{ok:true,stockData:stockData}:false;
   }catch(e){return false;}
