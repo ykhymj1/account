@@ -1576,36 +1576,35 @@ function App(){
 
       // 모든 소스 동시 시도
       const sources=[
-        // --- allorigins (가장 안정적) ---
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl1),8000)
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl2),8000)
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl1),8000)
-          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl2),8000)
-          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        // --- corsproxy.io ---
+        // --- corsproxy.io (우선순위 1) ---
         tf("https://corsproxy.io/?url="+encodeURIComponent(yUrl1),9000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         tf("https://corsproxy.io/?url="+encodeURIComponent(qUrl1),9000)
           .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        // --- corsproxy.io 구버전 포맷 ---
-        tf("https://corsproxy.io/?"+encodeURIComponent(yUrl1),9000)
+        tf("https://corsproxy.io/?url="+encodeURIComponent(yUrl2),9000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://corsproxy.io/?"+encodeURIComponent(qUrl2),9000)
+        tf("https://corsproxy.io/?url="+encodeURIComponent(qUrl2),9000)
           .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        // --- thingproxy ---
-        tf("https://thingproxy.freeboard.io/fetch/"+yUrl1,10000)
+        // --- allorigins ---
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl1),9000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl1),9000)
+          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl2),9000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl2),9000)
+          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
         // --- cors.sh ---
         tf("https://proxy.cors.sh/"+yUrl1,10000,{"x-cors-api-key":"temp_pf"})
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        // --- thingproxy ---
+        tf("https://thingproxy.freeboard.io/fetch/"+yUrl1,10000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        // --- yacdn ---
+        tf("https://yacdn.org/proxy/"+yUrl1,10000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         // --- crossorigin.me ---
         tf("https://crossorigin.me/"+yUrl1,10000)
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        // --- yacdn (대안 allorigins) ---
-        tf("https://yacdn.org/proxy/"+yUrl1,10000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
       ];
 

@@ -1374,18 +1374,18 @@ async function wlFetchOneTicker(tk){
 
   // ★ stock.html sources 배열과 100% 동일 (프록시 키도 동일)
   var sources=[
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?'+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?'+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl2),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_pf'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
   ];
 
   // ★ Promise.any polyfill — stock.html과 동일
