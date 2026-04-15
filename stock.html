@@ -1523,6 +1523,12 @@ function App(){
         tickerMap[tk]=h.assetType;
       });
     });
+    // ★ WL 전용 종목 추가 (계좌에 없지만 watchlist에는 있는 종목)
+    const WL_EXTRA=[
+      'VOO','QQQM','360750.KS','133690.KS','0047A0.KS',
+      'UNH','LLY','NEE','VST','VUG','438080.KS','SPYM','WHWK'
+    ];
+    WL_EXTRA.forEach(tk=>{if(!tickerMap[tk])tickerMap[tk]='watchlist';});
     const allTickers=Object.keys(tickerMap);
 
     // 종목 없으면 종료
@@ -1631,10 +1637,17 @@ function App(){
         setPrices(prev=>{
           const next={...prev,[tk]:result};
           sv(SK_PRICES,next);
+          // ★ watchlist에 즉시 전달 (종목 하나씩 부모로 push)
+          try{window.parent.postMessage({type:'WL_PRICE_UPDATE',ticker:tk,data:result},'*');}catch(e){}
           return next;
         });
       }
     }));
+    // ★ 환율도 watchlist로 전달
+    try{
+      const fx=fxRateRef.current;
+      if(fx&&fx>500)window.parent.postMessage({type:'WL_FX_UPDATE',rate:fx},'*');
+    }catch(e){}
 
     setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
     // ★★★ setCountdown 완전 제거 → countdownRef 직접 업데이트 (App 리렌더 없음)

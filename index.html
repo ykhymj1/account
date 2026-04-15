@@ -1140,6 +1140,25 @@ window.addEventListener('message',function(e){
     // 로그인 직후 오래된 로컬 데이터가 최신 클라우드 데이터를 덮어쓰는 문제가 있었음.
     // 실제 저장은 수동 백업 또는 로그인 직후 backupToCloud() 경로에서만 수행한다.
   }
+
+  // ★ stock.html에서 종목 가격 실시간 수신 → watchlist 즉시 반영
+  if(d.type==='WL_PRICE_UPDATE'&&d.ticker&&d.data){
+    var tk=d.ticker;
+    var res=d.data;
+    // .KS 제거해서 symbol로 매핑
+    var sym=tk.endsWith('.KS')?tk.slice(0,-3):tk;
+    var pct=res.prev>0?((res.price-res.prev)/res.prev*100):0;
+    var cur=(sym.length===6&&!isNaN(sym))||sym.endsWith('.KS')?'krw':'usd';
+    _wlPrices[sym]={price:res.price,pct:pct,currency:cur,prev:res.prev,_fromStock:true};
+    wlRender();
+  }
+
+  // ★ stock.html에서 환율 수신 → watchlist USD/KRW 즉시 반영
+  if(d.type==='WL_FX_UPDATE'&&d.rate&&d.rate>500){
+    _wlPrices['USDKRW']={price:d.rate,pct:null,currency:'fx'};
+    wlRender();
+    // 환율 갱신됐으므로 아직 가격 없는 종목 재시도 불필요 — render만으로 충분
+  }
 });
 
 /* ════ PIN ════ */
@@ -1491,9 +1510,15 @@ async function wlFetchPrices(list){
     }
   })();
 
-  // ★ 주식/ETF — 모든 종목 완전 병렬 (stock.html Promise.allSettled 방식)
+  // ★ 주식/ETF — stock.html이 WL_PRICE_UPDATE로 이미 보내준 종목은 스킵
+  //   stock.html이 안보내준 종목만 직접 fetch (폴백)
   var stockItems=list.filter(function(i){return i.type==='usd'||i.type==='krw';});
   var stockPromise=Promise.allSettled(stockItems.map(async function(item){
+    // stock.html에서 이미 받은 가격이 있으면 스킵 (3초 내 수신된 것만)
+    if(_wlPrices[item.symbol]&&_wlPrices[item.symbol]._fromStock){
+      wlRender();
+      return;
+    }
     var tk=(item.type==='krw')?(item.symbol+'.KS'):item.symbol;
     var result=await wlFetchOneTicker(tk);
     if(result){
