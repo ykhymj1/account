@@ -1523,12 +1523,6 @@ function App(){
         tickerMap[tk]=h.assetType;
       });
     });
-    // ★ WL 전용 종목 추가 (계좌에 없지만 watchlist에는 있는 종목)
-    const WL_EXTRA=[
-      'VOO','QQQM','360750.KS','133690.KS','0047A0.KS',
-      'UNH','LLY','NEE','VST','VUG','438080.KS','SPYM','WHWK'
-    ];
-    WL_EXTRA.forEach(tk=>{if(!tickerMap[tk])tickerMap[tk]='watchlist';});
     const allTickers=Object.keys(tickerMap);
 
     // 종목 없으면 종료
@@ -1582,35 +1576,36 @@ function App(){
 
       // 모든 소스 동시 시도
       const sources=[
-        // --- corsproxy.io (우선순위 1) ---
+        // --- allorigins (가장 안정적) ---
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl1),8000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl2),8000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl1),8000)
+          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl2),8000)
+          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+        // --- corsproxy.io ---
         tf("https://corsproxy.io/?url="+encodeURIComponent(yUrl1),9000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         tf("https://corsproxy.io/?url="+encodeURIComponent(qUrl1),9000)
           .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        tf("https://corsproxy.io/?url="+encodeURIComponent(yUrl2),9000)
+        // --- corsproxy.io 구버전 포맷 ---
+        tf("https://corsproxy.io/?"+encodeURIComponent(yUrl1),9000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://corsproxy.io/?url="+encodeURIComponent(qUrl2),9000)
+        tf("https://corsproxy.io/?"+encodeURIComponent(qUrl2),9000)
           .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        // --- allorigins ---
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl1),9000)
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl1),9000)
-          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(yUrl2),9000)
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf("https://api.allorigins.win/get?url="+encodeURIComponent(qUrl2),9000)
-          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
-        // --- cors.sh ---
-        tf("https://proxy.cors.sh/"+yUrl1,10000,{"x-cors-api-key":"temp_pf"})
-          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         // --- thingproxy ---
         tf("https://thingproxy.freeboard.io/fetch/"+yUrl1,10000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        // --- yacdn ---
-        tf("https://yacdn.org/proxy/"+yUrl1,10000)
+        // --- cors.sh ---
+        tf("https://proxy.cors.sh/"+yUrl1,10000,{"x-cors-api-key":"temp_pf"})
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         // --- crossorigin.me ---
         tf("https://crossorigin.me/"+yUrl1,10000)
+          .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        // --- yacdn (대안 allorigins) ---
+        tf("https://yacdn.org/proxy/"+yUrl1,10000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
       ];
 
@@ -1637,17 +1632,10 @@ function App(){
         setPrices(prev=>{
           const next={...prev,[tk]:result};
           sv(SK_PRICES,next);
-          // ★ watchlist에 즉시 전달 (종목 하나씩 부모로 push)
-          try{window.parent.postMessage({type:'WL_PRICE_UPDATE',ticker:tk,data:result},'*');}catch(e){}
           return next;
         });
       }
     }));
-    // ★ 환율도 watchlist로 전달
-    try{
-      const fx=fxRateRef.current;
-      if(fx&&fx>500)window.parent.postMessage({type:'WL_FX_UPDATE',rate:fx},'*');
-    }catch(e){}
 
     setLastUp(new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}));
     // ★★★ setCountdown 완전 제거 → countdownRef 직접 업데이트 (App 리렌더 없음)

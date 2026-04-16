@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<base href="/"/>
+<base href="https://ykhymj1.github.io/account/"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -1140,25 +1140,6 @@ window.addEventListener('message',function(e){
     // 로그인 직후 오래된 로컬 데이터가 최신 클라우드 데이터를 덮어쓰는 문제가 있었음.
     // 실제 저장은 수동 백업 또는 로그인 직후 backupToCloud() 경로에서만 수행한다.
   }
-
-  // ★ stock.html에서 종목 가격 실시간 수신 → watchlist 즉시 반영
-  if(d.type==='WL_PRICE_UPDATE'&&d.ticker&&d.data){
-    var tk=d.ticker;
-    var res=d.data;
-    // .KS 제거해서 symbol로 매핑
-    var sym=tk.endsWith('.KS')?tk.slice(0,-3):tk;
-    var pct=res.prev>0?((res.price-res.prev)/res.prev*100):0;
-    var cur=(sym.length===6&&!isNaN(sym))||sym.endsWith('.KS')?'krw':'usd';
-    _wlPrices[sym]={price:res.price,pct:pct,currency:cur,prev:res.prev,_fromStock:true};
-    wlRender();
-  }
-
-  // ★ stock.html에서 환율 수신 → watchlist USD/KRW 즉시 반영
-  if(d.type==='WL_FX_UPDATE'&&d.rate&&d.rate>500){
-    _wlPrices['USDKRW']={price:d.rate,pct:null,currency:'fx'};
-    wlRender();
-    // 환율 갱신됐으므로 아직 가격 없는 종목 재시도 불필요 — render만으로 충분
-  }
 });
 
 /* ════ PIN ════ */
@@ -1393,18 +1374,18 @@ async function wlFetchOneTicker(tk){
 
   // ★ stock.html sources 배열과 100% 동일 (프록시 키도 동일)
   var sources=[
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl2),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_pf'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?'+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://corsproxy.io/?'+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_pf'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
   ];
 
   // ★ Promise.any polyfill — stock.html과 동일
@@ -1510,15 +1491,9 @@ async function wlFetchPrices(list){
     }
   })();
 
-  // ★ 주식/ETF — stock.html이 WL_PRICE_UPDATE로 이미 보내준 종목은 스킵
-  //   stock.html이 안보내준 종목만 직접 fetch (폴백)
+  // ★ 주식/ETF — 모든 종목 완전 병렬 (stock.html Promise.allSettled 방식)
   var stockItems=list.filter(function(i){return i.type==='usd'||i.type==='krw';});
   var stockPromise=Promise.allSettled(stockItems.map(async function(item){
-    // stock.html에서 이미 받은 가격이 있으면 스킵 (3초 내 수신된 것만)
-    if(_wlPrices[item.symbol]&&_wlPrices[item.symbol]._fromStock){
-      wlRender();
-      return;
-    }
     var tk=(item.type==='krw')?(item.symbol+'.KS'):item.symbol;
     var result=await wlFetchOneTicker(tk);
     if(result){
