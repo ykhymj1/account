@@ -1377,7 +1377,7 @@ function wlPNaver(raw){
 }
 
 async function wlFetchOneTicker(tk){
-  var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
+  // ★ Yahoo는 v8/chart만 사용 (v7/quote는 2026-05부터 무료 사용 차단됨)
   var yUrl2='https://query2.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
 
   // 한국 종목 여부
@@ -1388,7 +1388,6 @@ async function wlFetchOneTicker(tk){
   var sources=[
     wlTF(WORKER_BASE+'/?yh='+encodeURIComponent(tk),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF(WORKER_BASE+'/?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF(WORKER_BASE+'/?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
   ];
   // 한국 종목이면 Naver도 (가장 빠름)
   if(isKR&&krCode){
@@ -1419,7 +1418,7 @@ async function wlFetchOneTicker(tk){
     try{
       var retryArr=[
         wlTF(WORKER_BASE+'/?yh='+encodeURIComponent(tk),12000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-        wlTF(WORKER_BASE+'/?url='+encodeURIComponent(qUrl1),10000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+        wlTF(WORKER_BASE+'/?url='+encodeURIComponent(yUrl2),12000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
       ];
       if(isKR&&krCode){
         retryArr.push(wlTF(WORKER_BASE+'/?nv='+encodeURIComponent(krCode),8000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}));

@@ -1538,9 +1538,8 @@ function App(){
 
     const fetchOneTicker=async(tk)=>{
       const now=()=>new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
-      const yUrl1="https://query1.finance.yahoo.com/v8/finance/chart/"+tk+"?interval=1d&range=1d";
+      // ★ Yahoo는 v8/chart만 사용 (v7/quote는 2026-05부터 무료 사용 차단됨)
       const yUrl2="https://query2.finance.yahoo.com/v8/finance/chart/"+tk+"?interval=1d&range=1d";
-      const qUrl1="https://query1.finance.yahoo.com/v7/finance/quote?symbols="+tk;
 
       // fetch with timeout (Worker는 압축 해제된 JSON을 직접 줌)
       const tf=async(url,ms)=>{
@@ -1605,15 +1604,14 @@ function App(){
       const isKR=tk.endsWith(".KS")||tk.endsWith(".KQ");
       const krCode=isKR?tk.replace(/\.(KS|KQ)$/,""):"";
 
-      // 모든 소스를 본인 Worker 통해 동시 시도
+      // 모든 소스를 본인 Worker 통해 동시 시도 (v8 chart만 사용)
       const sources=[
-        // Yahoo Finance (Worker 경유)
+        // Yahoo Finance v8 chart (query1)
         tf(WORKER_BASE+"/?yh="+encodeURIComponent(tk),8000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
+        // Yahoo Finance v8 chart (query2 - 백업)
         tf(WORKER_BASE+"/?url="+encodeURIComponent(yUrl2),8000)
           .then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-        tf(WORKER_BASE+"/?url="+encodeURIComponent(qUrl1),8000)
-          .then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
       ];
       // 한국 종목이면 Naver도 같이 시도 (가장 빠름)
       if(isKR&&krCode){
@@ -1631,7 +1629,7 @@ function App(){
         try{
           const retryArr=[
             tf(WORKER_BASE+"/?yh="+encodeURIComponent(tk),12000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-            tf(WORKER_BASE+"/?url="+encodeURIComponent(qUrl1),10000).then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+            tf(WORKER_BASE+"/?url="+encodeURIComponent(yUrl2),12000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
           ];
           if(isKR&&krCode){
             retryArr.push(tf(WORKER_BASE+"/?nv="+encodeURIComponent(krCode),8000).then(j=>{const r=pNaver(j);if(!r)throw 0;return r;}));
@@ -1945,10 +1943,10 @@ function App(){
     const save=r=>{setPrices(prev=>{const next={...prev,[tk]:r};sv(SK_PRICES,next);return next;});};
     const isKR=tk.endsWith(".KS")||tk.endsWith(".KQ");
     const krCode=isKR?tk.replace(/\.(KS|KQ)$/,""):"";
-    const q1="https://query1.finance.yahoo.com/v7/finance/quote?symbols="+tk;
+    const yUrl2="https://query2.finance.yahoo.com/v8/finance/chart/"+tk+"?interval=1d&range=1d";
     const sources=[
       tf(WORKER_BASE+"/?yh="+encodeURIComponent(tk),8000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-      tf(WORKER_BASE+"/?url="+encodeURIComponent(q1),8000).then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+      tf(WORKER_BASE+"/?url="+encodeURIComponent(yUrl2),8000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
     ];
     if(isKR&&krCode){
       sources.push(tf(WORKER_BASE+"/?nv="+encodeURIComponent(krCode),6000).then(j=>{const r=pNaver(j);if(!r)throw 0;return r;}));
@@ -1959,7 +1957,7 @@ function App(){
       try{
         const retryArr=[
           tf(WORKER_BASE+"/?yh="+encodeURIComponent(tk),10000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
-          tf(WORKER_BASE+"/?url="+encodeURIComponent(q1),10000).then(j=>{const r=pV7(j);if(!r)throw 0;return r;}),
+          tf(WORKER_BASE+"/?url="+encodeURIComponent(yUrl2),10000).then(j=>{const r=pV8(j);if(!r)throw 0;return r;}),
         ];
         if(isKR&&krCode){
           retryArr.push(tf(WORKER_BASE+"/?nv="+encodeURIComponent(krCode),8000).then(j=>{const r=pNaver(j);if(!r)throw 0;return r;}));
