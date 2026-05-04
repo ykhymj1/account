@@ -1372,7 +1372,22 @@ async function wlFetchOneTicker(tk){
   var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
   var qUrl2='https://query2.finance.yahoo.com/v7/finance/quote?symbols='+tk;
 
-  // ★ stock.html sources 배열과 100% 동일 (프록시 키도 동일)
+  // ★ Naver 금융 파싱 (한국 종목 직접 호출)
+  function wlPNaver(raw){
+    try{
+      if(raw&&(raw.stockEndType||raw.itemCode)){
+        var cur=parseFloat((raw.closePrice||raw.now||'').toString().replace(/,/g,''));
+        var diff=raw.compareToPreviousClosePrice!=null?raw.compareToPreviousClosePrice:(raw.compareWithYesterdayClosePrice!=null?raw.compareWithYesterdayClosePrice:0);
+        var prev=cur-parseFloat(diff||0);
+        if(cur>0)return{price:cur,prev:prev||cur,currency:'KRW'};
+      }
+    }catch(e){}
+    return null;
+  }
+  var isKR=tk.endsWith('.KS')||tk.endsWith('.KQ');
+  var krCode=isKR?tk.replace(/\.(KS|KQ)$/,''):'';
+
+  // 죽은 프록시 제거: thingproxy, cors.sh, crossorigin.me, yacdn
   var sources=[
     wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
@@ -1380,15 +1395,19 @@ async function wlFetchOneTicker(tk){
     wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
     wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?'+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?'+encodeURIComponent(qUrl2),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://thingproxy.freeboard.io/fetch/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://proxy.cors.sh/'+yUrl1,10000,{'x-cors-api-key':'temp_pf'}).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://crossorigin.me/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://yacdn.org/proxy/'+yUrl1,10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    // 새 프록시: codetabs (안정적, 무료)
+    wlTF('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
   ];
+  // 한국 종목이면 Naver 직접 호출 (가장 빠름)
+  if(isKR&&krCode){
+    sources.push(
+      wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/basic',6000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}),
+      wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/integration',6000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;})
+    );
+  }
 
-  // ★ Promise.any polyfill — stock.html과 동일
+  // ★ Promise.any polyfill
   var pAny=typeof Promise.any==='function'?Promise.any.bind(Promise):function(arr){
     return new Promise(function(res,rej){
       var errs=[],left=arr.length;
@@ -1405,13 +1424,17 @@ async function wlFetchOneTicker(tk){
   try{
     return await pAny(sources);
   }catch(e){
-    // 1차 실패 → 2초 후 allorigins만 재시도 (stock.html 동일)
+    // 1차 실패 → 2초 후 allorigins+naver 재시도
     await new Promise(function(res){setTimeout(res,2000);});
     try{
-      return await pAny([
+      var retryArr=[
         wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
         wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),10000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-      ]);
+      ];
+      if(isKR&&krCode){
+        retryArr.push(wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/basic',8000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}));
+      }
+      return await pAny(retryArr);
     }catch(e2){return null;}
   }
 }
