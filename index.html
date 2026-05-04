@@ -1325,89 +1325,79 @@ function wlSave(list){
   try{localStorage.setItem(WL_KEY,JSON.stringify(list));}catch(e){}
 }
 
-/* ─ 가격 조회 (stock.html fetchOneTicker 완전 동일 복사) ─ */
+/* ─ 가격 조회 (Cloudflare Worker 경유) ─ */
+var WORKER_BASE = 'https://ykh-stock-proxy.kyunghoyou.workers.dev';
 
-// ★ stock.html tf 함수와 100% 동일한 구조
-function wlTF(url, ms, hdrs){
+// Worker는 직접 JSON 반환 → 추가 헤더 불필요, 압축 자동 해제
+function wlTF(url, ms){
   var c=new AbortController();
   var t=setTimeout(function(){c.abort();},ms);
-  return fetch(url,{signal:c.signal,headers:hdrs||{"User-Agent":"Mozilla/5.0"}})
+  return fetch(url,{signal:c.signal})
     .then(function(r){
       clearTimeout(t);
       if(!r.ok)throw new Error(r.status);
-      return r.text();
-    })
-    .then(function(txt){
-      if(!txt||txt.startsWith('<')||txt.startsWith('<!'))throw new Error('html');
-      return JSON.parse(txt);
+      return r.json();
     })
     .catch(function(e){clearTimeout(t);throw e;});
 }
 
-// ★ stock.html pV8과 100% 동일
+// Yahoo v8 chart 파싱 (Worker가 압축 해제된 JSON 반환 → contents 래핑 없음)
 function wlPV8(raw){
   try{
-    var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
-    var m=d&&d.chart&&d.chart.result&&d.chart.result[0]&&d.chart.result[0].meta;
+    var m=raw&&raw.chart&&raw.chart.result&&raw.chart.result[0]&&raw.chart.result[0].meta;
     if(m&&m.regularMarketPrice&&m.regularMarketPrice>0)
       return{price:m.regularMarketPrice,prev:m.chartPreviousClose||m.regularMarketPrice,currency:m.currency||'KRW'};
   }catch(e){}
   return null;
 }
-// ★ stock.html pV7과 100% 동일
+// Yahoo v7 quote 파싱
 function wlPV7(raw){
   try{
-    var d=(raw&&raw.contents)?JSON.parse(raw.contents):raw;
-    var q=d&&d.quoteResponse&&d.quoteResponse.result&&d.quoteResponse.result[0];
+    var q=raw&&raw.quoteResponse&&raw.quoteResponse.result&&raw.quoteResponse.result[0];
     if(q&&q.regularMarketPrice&&q.regularMarketPrice>0)
       return{price:q.regularMarketPrice,prev:q.regularMarketPreviousClose||q.regularMarketPrice,currency:q.currency||'KRW'};
   }catch(e){}
   return null;
 }
-
-// ★ stock.html fetchOneTicker와 100% 동일한 로직
-async function wlFetchOneTicker(tk){
-  var yUrl1='https://query1.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
-  var yUrl2='https://query2.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
-  var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
-  var qUrl2='https://query2.finance.yahoo.com/v7/finance/quote?symbols='+tk;
-
-  // ★ Naver 금융 파싱 (한국 종목 직접 호출)
-  function wlPNaver(raw){
-    try{
-      if(raw&&(raw.stockEndType||raw.itemCode)){
-        var cur=parseFloat((raw.closePrice||raw.now||'').toString().replace(/,/g,''));
-        var diff=raw.compareToPreviousClosePrice!=null?raw.compareToPreviousClosePrice:(raw.compareWithYesterdayClosePrice!=null?raw.compareWithYesterdayClosePrice:0);
-        var prev=cur-parseFloat(diff||0);
-        if(cur>0)return{price:cur,prev:prev||cur,currency:'KRW'};
+// Naver 한국 주식 파싱
+function wlPNaver(raw){
+  try{
+    if(raw&&(raw.stockEndType||raw.itemCode)){
+      var cur=parseFloat((raw.closePrice||raw.now||'').toString().replace(/,/g,''));
+      var prev=cur;
+      if(raw.compareToPreviousPrice){
+        var sign=raw.compareToPreviousPrice.code==='2'?1:(raw.compareToPreviousPrice.code==='5'?-1:0);
+        var diff=parseFloat((raw.comparePreviousClosePrice||'0').toString().replace(/,/g,''));
+        prev=cur-(sign*diff);
       }
-    }catch(e){}
-    return null;
-  }
+      if(cur>0)return{price:cur,prev:prev||cur,currency:'KRW'};
+    }
+  }catch(e){}
+  return null;
+}
+
+async function wlFetchOneTicker(tk){
+  var qUrl1='https://query1.finance.yahoo.com/v7/finance/quote?symbols='+tk;
+  var yUrl2='https://query2.finance.yahoo.com/v8/finance/chart/'+tk+'?interval=1d&range=1d';
+
+  // 한국 종목 여부
   var isKR=tk.endsWith('.KS')||tk.endsWith('.KQ');
   var krCode=isKR?tk.replace(/\.(KS|KQ)$/,''):'';
 
-  // 죽은 프록시 제거: thingproxy, cors.sh, crossorigin.me, yacdn
+  // 모든 소스를 본인 Worker로 통일
   var sources=[
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl2),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?url='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://corsproxy.io/?url='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
-    // 새 프록시: codetabs (안정적, 무료)
-    wlTF('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(yUrl1),9000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-    wlTF('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(qUrl1),9000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+    wlTF(WORKER_BASE+'/?yh='+encodeURIComponent(tk),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF(WORKER_BASE+'/?url='+encodeURIComponent(yUrl2),8000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+    wlTF(WORKER_BASE+'/?url='+encodeURIComponent(qUrl1),8000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
   ];
-  // 한국 종목이면 Naver 직접 호출 (가장 빠름)
+  // 한국 종목이면 Naver도 (가장 빠름)
   if(isKR&&krCode){
     sources.push(
-      wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/basic',6000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}),
-      wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/integration',6000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;})
+      wlTF(WORKER_BASE+'/?nv='+encodeURIComponent(krCode),6000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;})
     );
   }
 
-  // ★ Promise.any polyfill
+  // Promise.any polyfill
   var pAny=typeof Promise.any==='function'?Promise.any.bind(Promise):function(arr){
     return new Promise(function(res,rej){
       var errs=[],left=arr.length;
@@ -1424,15 +1414,15 @@ async function wlFetchOneTicker(tk){
   try{
     return await pAny(sources);
   }catch(e){
-    // 1차 실패 → 2초 후 allorigins+naver 재시도
+    // 1차 실패 → 2초 후 재시도
     await new Promise(function(res){setTimeout(res,2000);});
     try{
       var retryArr=[
-        wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(yUrl1),10000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
-        wlTF('https://api.allorigins.win/get?url='+encodeURIComponent(qUrl1),10000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
+        wlTF(WORKER_BASE+'/?yh='+encodeURIComponent(tk),12000).then(function(j){var r=wlPV8(j);if(!r)throw 0;return r;}),
+        wlTF(WORKER_BASE+'/?url='+encodeURIComponent(qUrl1),10000).then(function(j){var r=wlPV7(j);if(!r)throw 0;return r;}),
       ];
       if(isKR&&krCode){
-        retryArr.push(wlTF('https://m.stock.naver.com/api/stock/'+krCode+'/basic',8000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}));
+        retryArr.push(wlTF(WORKER_BASE+'/?nv='+encodeURIComponent(krCode),8000).then(function(j){var r=wlPNaver(j);if(!r)throw 0;return r;}));
       }
       return await pAny(retryArr);
     }catch(e2){return null;}
@@ -1470,11 +1460,11 @@ async function wlFetchPrices(list){
       }catch(e){clearTimeout(t);throw e;}
     };
 
-    // 2순위: exconvert (allorigins 프록시)
+    // 2순위: exconvert (Worker 경유)
     var tryExconvert=async function(){
       var proxyUrls=[
+        WORKER_BASE+'/?url='+encodeURIComponent(EX_URL),
         'https://api.allorigins.win/get?url='+encodeURIComponent(EX_URL),
-        'https://corsproxy.io/?'+encodeURIComponent(EX_URL),
       ];
       for(var pi=0;pi<proxyUrls.length;pi++){
         var c2=new AbortController(),t2=setTimeout(function(){c2.abort();},10000);
