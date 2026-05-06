@@ -1583,10 +1583,10 @@ function App(){
           if(raw?.stockEndType||raw?.itemCode){
             const cur=parseFloat((raw.closePrice||raw.now||"").toString().replace(/,/g,""));
             let prev=cur;
-            if(raw.compareToPreviousPrice){
-              const sign=raw.compareToPreviousPrice.code==="2"?1:(raw.compareToPreviousPrice.code==="5"?-1:0);
-              const diff=parseFloat((raw.comparePreviousClosePrice||"0").toString().replace(/,/g,""));
-              prev=cur-(sign*diff);
+            // ★ Naver는 compareToPreviousClosePrice에 부호포함 차이값을 직접 줌 (예: "-55", "+30")
+            if(raw.compareToPreviousClosePrice!=null){
+              const diff=parseFloat(raw.compareToPreviousClosePrice.toString().replace(/,/g,""));
+              if(!isNaN(diff))prev=cur-diff;
             }
             if(cur>0)return{price:cur,prev:prev||cur,currency:"KRW",time:now()};
           }
@@ -1937,10 +1937,10 @@ function App(){
         if(raw?.stockEndType||raw?.itemCode){
           const cur=parseFloat((raw.closePrice||raw.now||"").toString().replace(/,/g,""));
           let prev=cur;
-          if(raw.compareToPreviousPrice){
-            const sign=raw.compareToPreviousPrice.code==="2"?1:(raw.compareToPreviousPrice.code==="5"?-1:0);
-            const diff=parseFloat((raw.comparePreviousClosePrice||"0").toString().replace(/,/g,""));
-            prev=cur-(sign*diff);
+          // ★ Naver는 compareToPreviousClosePrice에 부호포함 차이값을 직접 줌 (예: "-55", "+30")
+          if(raw.compareToPreviousClosePrice!=null){
+            const diff=parseFloat(raw.compareToPreviousClosePrice.toString().replace(/,/g,""));
+            if(!isNaN(diff))prev=cur-diff;
           }
           if(cur>0)return{price:cur,prev:prev||cur,currency:"KRW",time:now()};
         }
