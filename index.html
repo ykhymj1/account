@@ -101,15 +101,24 @@ input:focus{outline:none;}
 .wl-card:active{box-shadow:0 4px 14px rgba(0,0,0,.1);}
 .wl-card.dragging{opacity:.45;box-shadow:0 8px 24px rgba(0,0,0,.18);}
 .wl-card.drag-over{border-color:#2563eb;background:#eff6ff;}
+/* ★ 상승/하락 카드 배경 강조 (위젯 느낌) */
+.wl-card.is-up{background:linear-gradient(180deg,#fff5f5 0%,#fff 70%);border-color:#fecaca;}
+.wl-card.is-dn{background:linear-gradient(180deg,#eff6ff 0%,#fff 70%);border-color:#bfdbfe;}
 /* ★ 글자 크게/진하게 */
-.wl-price{font-size:18px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.2;margin-top:3px;}
+.wl-price{font-size:19px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.2;margin-top:3px;}
 .wl-name{font-size:14px;color:#111827;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.2px;}
 .wl-pct{font-size:13px;font-weight:800;margin-top:5px;display:flex;align-items:center;gap:3px;}
 .wl-up{color:#dc2626;}.wl-dn{color:#2563eb;}.wl-flat{color:#94a3b8;}
 .wl-arrow{font-size:12px;}
-/* 계좌 수익률 행 */
-.wl-acct-pnl{font-size:11px;font-weight:700;margin-top:3px;display:flex;align-items:center;gap:2px;padding-top:4px;border-top:1px solid #f1f5f9;}
+/* 계좌 수익률 행 - 수익금 강조 */
+.wl-acct-pnl{font-size:11px;font-weight:700;margin-top:4px;display:flex;align-items:center;gap:3px;padding-top:5px;border-top:1px solid #f1f5f9;flex-wrap:wrap;}
+.wl-acct-pnl .wl-acct-amount{font-size:12px;font-weight:800;letter-spacing:-.2px;}
 .wl-acct-up{color:#dc2626;}.wl-acct-dn{color:#2563eb;}.wl-acct-flat{color:#94a3b8;}
+/* ★ 풀-투-리프레시 인디케이터 */
+#wlPullRefresh{position:absolute;top:0;left:50%;transform:translateX(-50%) translateY(-40px);font-size:18px;color:#2563eb;font-weight:800;transition:transform .2s;pointer-events:none;z-index:2;}
+#wlPullRefresh.show{transform:translateX(-50%) translateY(8px);}
+#wlPullRefresh.spinning{animation:wlspin 1s linear infinite;}
+@keyframes wlspin{from{transform:translateX(-50%) translateY(8px) rotate(0deg);}to{transform:translateX(-50%) translateY(8px) rotate(360deg);}}
 #wlAddBtn{display:flex;align-items:center;justify-content:center;gap:4px;margin:0 12px 14px;padding:11px;border-radius:12px;background:#eff6ff;border:1.5px dashed #93c5fd;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;}
 /* Watchlist edit modal */
 #wlModal{position:fixed;inset:0;max-width:480px;margin:0 auto;z-index:300;background:rgba(0,0,0,.55);display:none;align-items:flex-end;}
@@ -151,14 +160,15 @@ input:focus{outline:none;}
   </div>
 </div>
 
-<!-- ★ Watchlist Panel (잠금화면 하단 - 기본 peek, 탭하면 펼쳐짐) -->
+<!-- ★ Watchlist Panel (잠금화면 하단 - 기본 펼쳐짐, 스와이프로 접기 가능) -->
 <div id="watchlistPanel">
+  <div id="wlPullRefresh">↻</div>
   <div id="watchlistHandle" onclick="wlToggle()"></div>
   <!-- peek bar: 접혀있을 때 탭하면 펼쳐짐 -->
   <div id="wlPeekBar" onclick="wlToggle()">
     <div style="font-size:13px;font-weight:800;color:#111827;">📈 관심종목</div>
     <div style="display:flex;align-items:center;gap:6px;">
-      <span id="wlPeekArrow" style="font-size:11px;color:#6b7280;font-weight:700;">▲ 펼치기</span>
+      <span id="wlPeekArrow" style="font-size:11px;color:#6b7280;font-weight:700;">▲ 탭해서 펼치기</span>
     </div>
   </div>
   <!-- expanded header: 펼쳐졌을 때 표시 -->
@@ -1208,9 +1218,10 @@ async function enrollBio(){
 
 /* ════ 앱 흐름 ════ */
 function unlock(){document.getElementById('lockScreen').classList.remove('show');document.getElementById('pinSetup').classList.remove('show');
-  // ★ Watchlist 완전 숨김
+  // ★ Watchlist 완전 숨김 + 자동 갱신 중단
   var wlp=document.getElementById('watchlistPanel');
   if(wlp){wlp.classList.add('hidden');wlp.classList.remove('expanded');_wlExpanded=false;}
+  wlStopAutoRefresh();
   showHome();}
 var _summaryTimeoutId=null;
 function showHome(){
@@ -1271,21 +1282,13 @@ function lockApp(){
   pinBuf='';dots('d',0);setSt('','');
   if(hasBio())setSt('버튼으로 지문 잠금해제','');
   else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
-  // ★ Watchlist peek 상태로 표시
+  // ★ Watchlist 자동 펼침 (위젯 모드)
   var wlp=document.getElementById('watchlistPanel');
   if(wlp){
     wlp.classList.remove('hidden');
-    wlp.classList.remove('expanded');
-    _wlExpanded=false;
-    var pb=document.getElementById('wlPeekBar');
-    var wh=document.getElementById('watchlistHeader');
-    var wg=document.getElementById('watchlistGrid');
-    var wa=document.getElementById('wlAddBtn');
-    if(pb)pb.style.display='flex';
-    if(wh)wh.style.display='none';
-    if(wg)wg.style.display='none';
-    if(wa)wa.style.display='none';
+    wlSetExpanded(true);
     wlRefresh();
+    wlStartAutoRefresh();
   }
 }
 
@@ -1563,19 +1566,29 @@ function wlRender(){
       var acls=apct>0?'wl-acct-up':apct<0?'wl-acct-dn':'wl-acct-flat';
       var aarr=apct>0?'▲':apct<0?'▼':'';
       var apctStr=(apct>0?'+':'')+apct.toFixed(2)+'%';
-      // 수익금 표시 (원화 포맷)
+      // 수익금 표시 (원화 포맷) - 더 강조
       var pnlAbs=Math.abs(Math.round(tp.pnl));
       var pnlSign=tp.pnl>=0?'+':'-';
       var pnlStr=pnlSign+'₩'+pnlAbs.toLocaleString('ko-KR');
       acctPnlHtml='<div class="wl-acct-pnl '+acls+'">'+
         '<span style="font-size:10px;">내계좌</span>'+
-        '<span style="margin-left:3px;">'+aarr+' '+apctStr+'</span>'+
-        '<span style="font-size:10px;margin-left:4px;opacity:.8;">'+pnlStr+'</span>'+
+        '<span>'+aarr+' '+apctStr+'</span>'+
+        '<span class="wl-acct-amount">'+pnlStr+'</span>'+
       '</div>';
     }
 
+    // ★ 카드 배경 강조: 시세 등락에 따라 색 (계좌 보유 종목 우선, 없으면 시세 변동)
+    var cardClass='wl-card';
+    var trendForBg=null;
+    if(tp&&tp.invested>0){trendForBg=tp.pct;}
+    else if(p&&p.pct!=null){trendForBg=p.pct;}
+    if(trendForBg!=null){
+      if(trendForBg>0.05)cardClass+=' is-up';
+      else if(trendForBg<-0.05)cardClass+=' is-dn';
+    }
+
     var card=document.createElement('div');
-    card.className='wl-card';
+    card.className=cardClass;
     card.dataset.idx=idx;
     card.draggable=true;
     card.innerHTML=
@@ -1583,8 +1596,8 @@ function wlRender(){
       '<div class="wl-price">'+priceStr+'</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-top:5px;">'+
         (pctStr?'<div class="wl-pct '+pctClass+'" style="margin-top:0;"><span class="wl-arrow">'+arrowChar+'</span>'+pctStr+'</div>':'<div class="wl-pct wl-flat" style="margin-top:0;">--</div>')+
-        (tp&&tp.invested>0?'<div class="wl-pct '+(tp.pct>0?'wl-up':tp.pct<0?'wl-dn':'wl-flat')+'" style="margin-top:0;font-size:11px;">'+(tp.pct>0?'▲':tp.pct<0?'▼':'')+(tp.pct>0?'+':'')+tp.pct.toFixed(2)+'%</div>':'')+
-      '</div>';
+      '</div>'+
+      acctPnlHtml;
     // drag events
     card.addEventListener('dragstart',function(e){_wlDragSrc=idx;card.classList.add('dragging');});
     card.addEventListener('dragend',function(){card.classList.remove('dragging');document.querySelectorAll('.wl-card').forEach(function(c){c.classList.remove('drag-over');});});
@@ -1708,19 +1721,9 @@ function wlToggle(){
   wlSetExpanded(!_wlExpanded);
 }
 
-// ★ 잠금화면 터치 시 패널 접기 (PIN 입력 방해 방지)
+// ★ 잠금화면 터치 시 패널 접기 로직은 제거됨 (이제 watchlist는 항상 펼쳐진 위젯 모드)
+// 대신 핸들/스와이프로 명시적으로 접을 수 있게 유지
 document.addEventListener('DOMContentLoaded',function(){
-  var lockScr=document.getElementById('lockScreen');
-  var panel=document.getElementById('watchlistPanel');
-  if(lockScr&&panel){
-    lockScr.addEventListener('touchstart',function(e){
-      // 패널 영역 터치가 아닐 때만 접기
-      if(_wlExpanded&&!panel.contains(e.target)){
-        wlSetExpanded(false);
-      }
-    },{passive:true});
-  }
-
   // ★ 핸들/peekBar 스와이프: 위로 → expand, 아래로 → collapse
   var swipeStartY=0;
   var handle=document.getElementById('watchlistHandle');
@@ -1740,6 +1743,67 @@ document.addEventListener('DOMContentLoaded',function(){
     peekBar.addEventListener('touchstart',onSwipeStart,{passive:true});
     peekBar.addEventListener('touchend',onSwipeEnd,{passive:true});
   }
+
+  // ★ 풀-투-리프레시: watchlistGrid에서 아래로 당기면 갱신
+  var grid=document.getElementById('watchlistGrid');
+  var pullInd=document.getElementById('wlPullRefresh');
+  var pullStartY=0,pulling=false,pullDist=0;
+  var PULL_THRESHOLD=60;
+  if(grid&&pullInd){
+    grid.addEventListener('touchstart',function(e){
+      if(grid.scrollTop>0){pulling=false;return;}
+      pullStartY=e.touches[0].clientY;
+      pulling=true;
+      pullDist=0;
+    },{passive:true});
+    grid.addEventListener('touchmove',function(e){
+      if(!pulling)return;
+      pullDist=e.touches[0].clientY-pullStartY;
+      if(pullDist>10&&grid.scrollTop<=0){
+        pullInd.classList.add('show');
+      }
+    },{passive:true});
+    grid.addEventListener('touchend',function(e){
+      if(!pulling){pullInd.classList.remove('show');return;}
+      pulling=false;
+      if(pullDist>PULL_THRESHOLD){
+        // 갱신 트리거
+        pullInd.classList.add('spinning');
+        wlRefresh();
+        setTimeout(function(){
+          pullInd.classList.remove('spinning');
+          pullInd.classList.remove('show');
+        },1200);
+      }else{
+        pullInd.classList.remove('show');
+      }
+      pullDist=0;
+    },{passive:true});
+  }
+});
+
+// ★ 자동 갱신: 잠금화면 표시 중일 때 30초마다 시세 갱신
+var _wlAutoTimer=null;
+function wlStartAutoRefresh(){
+  wlStopAutoRefresh();
+  _wlAutoTimer=setInterval(function(){
+    // 잠금화면 표시 중이고 패널이 펼쳐져 있을 때만 갱신
+    var lockScr=document.getElementById('lockScreen');
+    if(!lockScr||!lockScr.classList.contains('show'))return;
+    if(document.hidden)return; // 화면 꺼져있으면 패스
+    wlRefresh();
+  },30000);
+}
+function wlStopAutoRefresh(){
+  if(_wlAutoTimer){clearInterval(_wlAutoTimer);_wlAutoTimer=null;}
+}
+// 화면이 다시 켜질 때 즉시 한번 갱신
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden)return;
+  var lockScr=document.getElementById('lockScreen');
+  if(lockScr&&lockScr.classList.contains('show')&&_wlExpanded){
+    wlRefresh();
+  }
 });
 
 /* ════ 시작 ════ */
@@ -1748,21 +1812,13 @@ function startApp(){
   if(!getPin()){document.getElementById('pinSetup').classList.add('show');}
   else{
     document.getElementById('lockScreen').classList.add('show');
-    // ★ Watchlist peek 상태로 표시
+    // ★ Watchlist 자동 펼침 (위젯 모드)
     var wlp=document.getElementById('watchlistPanel');
     if(wlp){
       wlp.classList.remove('hidden');
-      wlp.classList.remove('expanded');
-      _wlExpanded=false;
-      var pb=document.getElementById('wlPeekBar');
-      var wh=document.getElementById('watchlistHeader');
-      var wg=document.getElementById('watchlistGrid');
-      var wa=document.getElementById('wlAddBtn');
-      if(pb)pb.style.display='flex';
-      if(wh)wh.style.display='none';
-      if(wg)wg.style.display='none';
-      if(wa)wa.style.display='none';
+      wlSetExpanded(true);
       wlRefresh();
+      wlStartAutoRefresh();
     }
     if(hasBio())setSt('버튼으로 지문 잠금해제','');
     else{document.getElementById('bioRegBtn').style.display='flex';setSt('PIN 입력 후 지문을 등록할 수 있습니다','');}
