@@ -1559,8 +1559,20 @@ function wlRender(){
     }
 
     // ★ 계좌 수익률 (stock.html STOCK_SUMMARY.tickerPnl에서)
+    //  - item.acctId가 지정돼 있으면 그 계좌의 데이터 우선 사용
+    //  - 없으면 기본값(stock.html에서 가장 평가금액 큰 계좌 자동 선택)
     var acctPnlHtml='';
-    var tp=_wlTickerPnl&&_wlTickerPnl[item.symbol];
+    var tp=null;
+    if(_wlTickerPnl){
+      if(item.acctId){
+        // 사용자가 명시적으로 선택한 계좌 데이터
+        tp=_wlTickerPnl[item.symbol+'__'+item.acctId];
+      }
+      if(!tp){
+        // 기본값 (가장 평가금액 큰 계좌)
+        tp=_wlTickerPnl[item.symbol];
+      }
+    }
     if(tp&&tp.invested>0){
       var apct=tp.pct;
       var acls=apct>0?'wl-acct-up':apct<0?'wl-acct-dn':'wl-acct-flat';
@@ -1570,8 +1582,15 @@ function wlRender(){
       var pnlAbs=Math.abs(Math.round(tp.pnl));
       var pnlSign=tp.pnl>=0?'+':'-';
       var pnlStr=pnlSign+'₩'+pnlAbs.toLocaleString('ko-KR');
+      // ★ 계좌 라벨 (예: "AMT", "일반", "My AMT" 등)
+      var acctLbl=tp.acctShort||tp.acctLabel||'';
+      // 너무 길면 줄임 (8자 이상)
+      if(acctLbl.length>8)acctLbl=acctLbl.slice(0,8);
+      var acctLblHtml=acctLbl
+        ? '<span style="font-size:10px;background:#f1f5f9;color:#475569;padding:1px 5px;border-radius:4px;font-weight:700;">'+acctLbl+'</span>'
+        : '<span style="font-size:10px;">내계좌</span>';
       acctPnlHtml='<div class="wl-acct-pnl '+acls+'">'+
-        '<span style="font-size:10px;">내계좌</span>'+
+        acctLblHtml+
         '<span>'+aarr+' '+apctStr+'</span>'+
         '<span class="wl-acct-amount">'+pnlStr+'</span>'+
       '</div>';
@@ -1644,13 +1663,43 @@ function wlRenderEditList(){
   if(!el)return;
   el.innerHTML='';
   list.forEach(function(item,idx){
+    // ★ 보유 계좌 목록 가져오기 (stock.html에서 받은 데이터)
+    var acctOptions='';
+    var accts=_wlTickerPnl&&_wlTickerPnl['__accts__'+item.symbol];
+    if(accts&&accts.length>0){
+      // "자동" 옵션 (기본값 = 가장 큰 계좌)
+      var autoSel=!item.acctId?' selected':'';
+      acctOptions+='<option value=""'+autoSel+'>자동 (큰 계좌)</option>';
+      accts.forEach(function(a){
+        var sel=item.acctId===a.acctId?' selected':'';
+        var lbl=(a.acctShort||a.acctLabel||a.acctId||'');
+        // 평가금액도 표시 (₩ 단위)
+        var curStr='';
+        if(a.current>0){
+          if(a.current>=10000)curStr=' (₩'+Math.round(a.current/10000).toLocaleString('ko-KR')+'만)';
+          else curStr=' (₩'+Math.round(a.current).toLocaleString('ko-KR')+')';
+        }
+        acctOptions+='<option value="'+a.acctId+'"'+sel+'>'+lbl+curStr+'</option>';
+      });
+    }
+
     var row=document.createElement('div');
     row.className='wl-edit-row';
-    row.innerHTML=
+    row.style.flexWrap='wrap';
+    var topPart=
       '<span class="wl-drag-handle" draggable="true">☰</span>'+
-      '<span style="flex:1;font-size:13px;font-weight:700;color:#111827;">'+item.name+'</span>'+
+      '<span style="flex:1;font-size:13px;font-weight:700;color:#111827;min-width:80px;">'+item.name+'</span>'+
       '<span style="font-size:11px;color:#9ca3af;margin-right:8px;font-family:monospace;">'+item.symbol+'</span>'+
       '<button data-idx="'+idx+'" onclick="wlDeleteItem('+idx+')" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer;">삭제</button>';
+    var dropdownPart=acctOptions
+      ? '<div style="width:100%;display:flex;align-items:center;gap:8px;margin-top:6px;padding-left:24px;">'+
+          '<span style="font-size:11px;color:#6b7280;font-weight:600;">표시 계좌:</span>'+
+          '<select onchange="wlSetAcctId('+idx+',this.value)" style="flex:1;font-size:12px;padding:5px 8px;border:1px solid #d1d9e6;border-radius:6px;background:#f8f9fa;color:#111827;font-family:\'Noto Sans KR\',sans-serif;font-weight:600;">'+
+            acctOptions+
+          '</select>'+
+        '</div>'
+      : '';
+    row.innerHTML=topPart+dropdownPart;
     row.dataset.idx=idx;
     row.draggable=true;
     row.addEventListener('dragstart',function(e){_wlDragSrc=idx;row.style.opacity='.4';});
@@ -1667,6 +1716,16 @@ function wlRenderEditList(){
     });
     el.appendChild(row);
   });
+}
+// ★ 표시 계좌 드롭다운 변경 핸들러
+function wlSetAcctId(idx,acctId){
+  var list=wlLoad();
+  if(!list[idx])return;
+  if(acctId){list[idx].acctId=acctId;}
+  else{delete list[idx].acctId;} // "자동" 선택 시 acctId 제거
+  wlSave(list);
+  // 편집 모달 닫혀있지 않을 때만 즉시 카드도 갱신
+  wlRender();
 }
 function wlDeleteItem(idx){
   var list=wlLoad();
